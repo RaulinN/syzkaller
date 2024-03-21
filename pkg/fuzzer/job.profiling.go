@@ -283,8 +283,6 @@ type smashJob struct {
 }
 
 func (job *smashJob) run(fuzzer *Fuzzer) {
-	fuzzer.profilingStats.IncCounter(ProfilingStatModeSmash)
-	fuzzer.stats["STATS_REMOVE_SMASH"]++ // FIXME remove: test only
 	fuzzer.Logf(2, "smashing the program %s (call=%d):", job.p, job.call)
 	if fuzzer.Config.Comparisons && job.call >= 0 {
 		fuzzer.startJob(&hintsJob{
@@ -293,6 +291,9 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 			jobPriority: newJobPriority(smashPrio),
 		})
 	}
+
+	fuzzer.profilingStats.IncCounter(ProfilingStatModeSmash)
+	fuzzer.stats["STATS_REMOVE_SMASH"]++ // FIXME remove: test only
 
 	const iters = 100
 	rnd := fuzzer.rand()

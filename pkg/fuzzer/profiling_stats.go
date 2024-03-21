@@ -3,7 +3,6 @@
 package fuzzer
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -23,14 +22,15 @@ type StatCount uint64
 // type StatDuration time.Duration // FIXME
 
 type ProfilingStats struct {
-	lock        sync.RWMutex
-	totalCounts map[ProfilingCounterName]StatCount
-	deltaCounts map[ProfilingCounterName]StatCount
+	// lock        sync.RWMutex
 
-	// countModeGenerate    StatCount
-	// countModeMutate      StatCount
-	// countModeMutateHints StatCount
-	// countModeSmash       StatCount
+	//totalCounts map[ProfilingCounterName]StatCount
+	//deltaCounts map[ProfilingCounterName]StatCount
+
+	totalModeGenerate    StatCount
+	totalModeMutate      StatCount
+	totalModeMutateHints StatCount
+	totalModeSmash       StatCount
 
 	// durationModeGenerate    StatDuration
 	// durationModeMutate      StatDuration
@@ -42,9 +42,18 @@ type ProfilingStats struct {
 
 func NewProfilingStats() *ProfilingStats {
 	return &ProfilingStats{
-		lock:        sync.RWMutex{},
-		totalCounts: map[ProfilingCounterName]StatCount{},
-		deltaCounts: map[ProfilingCounterName]StatCount{},
+		//lock:        sync.RWMutex{},
+		//totalCounts: map[ProfilingCounterName]StatCount{},
+		//deltaCounts: map[ProfilingCounterName]StatCount{},
+	}
+}
+
+func (ps *ProfilingStats) allCounts() map[ProfilingCounterName]uint64 {
+	return map[ProfilingCounterName]uint64{
+		ProfilingStatModeGenerate:    ps.totalModeGenerate.get(),
+		ProfilingStatModeMutate:      ps.totalModeMutate.get(),
+		ProfilingStatModeMutateHints: ps.totalModeMutateHints.get(),
+		ProfilingStatModeSmash:       ps.totalModeSmash.get(),
 	}
 }
 
@@ -60,21 +69,23 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			ProfilingStatModeSmash,
 		}
 
+		prevCounts := map[ProfilingCounterName]uint64{}
+
 		for {
 			time.Sleep(10 * time.Second)
 
-			fuzzer.Logf(0, "logging total counts: %v", fuzzer.profilingStats.totalCounts)
-			fuzzer.Logf(0, "logging delta counts: %v", fuzzer.profilingStats.deltaCounts)
+			counts := fuzzer.profilingStats.allCounts()
+
+			fuzzer.Logf(0, "logging total counts: %v", counts)
 
 			// TODO lock the stats map?
 			//fuzzer.profilingStats.lock.Lock()
 
-			var oldValue uint64 = 0
 			for _, modeName := range modes {
-				stat := fuzzer.profilingStats.deltaCounts[modeName]
-				stat.reset(&oldValue)
-
-				fuzzer.stats[string(modeName)] = oldValue
+				current := counts[modeName]
+				delta := current - prevCounts[modeName]
+				fuzzer.stats[string(modeName)] = delta
+				prevCounts[modeName] = current
 			}
 
 			//fuzzer.profilingStats.lock.Unlock()
@@ -83,13 +94,18 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 }
 
 func (ps *ProfilingStats) IncCounter(counterName ProfilingCounterName) {
-	//ps.lock.Lock()
-	//defer ps.lock.Unlock()
-
-	stat := ps.totalCounts[counterName]
-	stat.inc()
-	stat = ps.deltaCounts[counterName]
-	stat.inc()
+	switch counterName {
+	case ProfilingStatModeGenerate:
+		ps.totalModeGenerate.inc()
+	case ProfilingStatModeMutate:
+		ps.totalModeMutate.inc()
+	case ProfilingStatModeMutateHints:
+		ps.totalModeMutateHints.inc()
+	case ProfilingStatModeSmash:
+		ps.totalModeSmash.inc()
+	default:
+		// FIXME
+	}
 }
 
 func (s *StatCount) get() uint64 {

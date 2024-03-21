@@ -28,18 +28,16 @@ func NewProfilingStats() *ProfilingStats {
 	return &ProfilingStats{}
 }
 
-// func l(level int, msg string, args ...interface{}
-// all maps are passed by reference
-func (ps *ProfilingStats) StartLogger(log func(int, string, ...interface{}), stats map[string]uint64) {
+func (fuzzer *Fuzzer) StartProfilingLogger() {
 	// TODO go routine start log on the file
 	// TODO go routine logs on the dashboard
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			ps.countMutator.inc()
-			log(0, "logging from the coroutine (1): %v", ps)
-			stats["CUSTOM_CLASS_STAT"] = ps.countMutator.get()
-			log(0, "logging from the coroutine (2): %v", ps.countMutator.get())
+			fuzzer.profilingStats.countMutator.inc()
+			fuzzer.Logf(0, "logging from the coroutine (1): %v", fuzzer.profilingStats)
+			fuzzer.stats["CUSTOM_CLASS_STAT2"] = fuzzer.profilingStats.countMutator.get()
+			fuzzer.Logf(0, "logging from the coroutine (2): %v", fuzzer.profilingStats.countMutator.get())
 		}
 	}()
 }

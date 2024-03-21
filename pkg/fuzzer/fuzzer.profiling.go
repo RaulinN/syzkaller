@@ -24,7 +24,7 @@ type Fuzzer struct {
 	Config         *Config
 	Cover          *Cover
 	NeedCandidates chan struct{}
-	ProfilingStats *ProfilingStats
+	profilingStats *ProfilingStats
 
 	ctx    context.Context
 	mu     sync.Mutex
@@ -55,7 +55,7 @@ func NewFuzzer(ctx context.Context, cfg *Config, rnd *rand.Rand,
 		Config:         cfg,
 		Cover:          &Cover{},
 		NeedCandidates: make(chan struct{}, 1),
-		ProfilingStats: NewProfilingStats(),
+		profilingStats: NewProfilingStats(),
 
 		ctx:    ctx,
 		stats:  map[string]uint64{},
@@ -75,7 +75,6 @@ func NewFuzzer(ctx context.Context, cfg *Config, rnd *rand.Rand,
 		go f.leakDetector()
 		go f.logCurrentStats()
 	}
-	f.ProfilingStats.StartLogger(f.Logf, f.stats) // FIXME mutex on the map?
 	return f
 }
 

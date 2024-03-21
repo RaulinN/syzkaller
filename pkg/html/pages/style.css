@@ -180,8 +180,8 @@ table td, table th {
 }
 
 .list_table .stat_name {
-	width: 150pt;
-	max-width: 150pt;
+	width: 300pt;
+	max-width: 300pt;
 	font-family: monospace;
 }
 

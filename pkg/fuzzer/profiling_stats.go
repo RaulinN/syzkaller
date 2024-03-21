@@ -3,18 +3,29 @@
 package fuzzer
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 )
 
-type ProfilingCounterName string
+type ProfilingModeName string
+type ProfilingMutatorName string
 
 const prefix = "[profiling] "
 const (
-	ProfilingStatModeGenerate    ProfilingCounterName = prefix + "mode generate"
-	ProfilingStatModeMutate      ProfilingCounterName = prefix + "mode mutate"
-	ProfilingStatModeMutateHints ProfilingCounterName = prefix + "mode mutate with hints"
-	ProfilingStatModeSmash       ProfilingCounterName = prefix + "mode smash"
+	ProfilingStatModeGenerate        ProfilingModeName = prefix + "mode generate"
+	ProfilingStatModeMutate          ProfilingModeName = prefix + "mode mutate"
+	ProfilingStatModeMutateHints     ProfilingModeName = prefix + "mode mutate with hints"
+	ProfilingStatModeSmash           ProfilingModeName = prefix + "mode smash"
+	ProfilingStatModeMutateFromSmash ProfilingModeName = prefix + "mode mutate (from smash)"
+)
+
+const (
+	ProfilingStatMutatorSquashAny  ProfilingMutatorName = prefix + "mutator squashAny"
+	ProfilingStatMutatorSplice     ProfilingMutatorName = prefix + "mutator splice"
+	ProfilingStatMutatorInsertCall ProfilingMutatorName = prefix + "mutator insertCall"
+	ProfilingStatMutatorMutateArg  ProfilingMutatorName = prefix + "mutator mutateArg"
+	ProfilingStatMutatorRemoveCall ProfilingMutatorName = prefix + "mutator removeCall"
 )
 
 type StatCount uint64
@@ -22,54 +33,65 @@ type StatCount uint64
 // type StatDuration time.Duration // FIXME
 
 type ProfilingStats struct {
-	// lock        sync.RWMutex
+	countModeGenerate        StatCount
+	countModeMutate          StatCount
+	countModeMutateHints     StatCount
+	countModeSmash           StatCount
+	countModeMutateFromSmash StatCount
 
-	//totalCounts map[ProfilingCounterName]StatCount
-	//deltaCounts map[ProfilingCounterName]StatCount
-
-	totalModeGenerate    StatCount
-	totalModeMutate      StatCount
-	totalModeMutateHints StatCount
-	totalModeSmash       StatCount
+	countMutatorSquashAny  StatCount
+	countMutatorSplice     StatCount
+	countMutatorInsertCall StatCount
+	countMutatorMutateArg  StatCount
+	countMutatorRemoveCall StatCount
 
 	// durationModeGenerate    StatDuration
 	// durationModeMutate      StatDuration
 	// durationModeMutateHints StatDuration
 	// durationModeSmash       StatDuration
-
-	// countMutator StatCount
 }
 
 func NewProfilingStats() *ProfilingStats {
-	return &ProfilingStats{
-		//lock:        sync.RWMutex{},
-		//totalCounts: map[ProfilingCounterName]StatCount{},
-		//deltaCounts: map[ProfilingCounterName]StatCount{},
-	}
+	return &ProfilingStats{}
 }
 
-func (ps *ProfilingStats) allCounts() map[ProfilingCounterName]uint64 {
-	return map[ProfilingCounterName]uint64{
-		ProfilingStatModeGenerate:    ps.totalModeGenerate.get(),
-		ProfilingStatModeMutate:      ps.totalModeMutate.get(),
-		ProfilingStatModeMutateHints: ps.totalModeMutateHints.get(),
-		ProfilingStatModeSmash:       ps.totalModeSmash.get(),
+func (ps *ProfilingStats) allCounts() map[string]uint64 {
+	return map[string]uint64{
+		// modes of operation
+		string(ProfilingStatModeGenerate):        ps.countModeGenerate.get(),
+		string(ProfilingStatModeMutate):          ps.countModeMutate.get(),
+		string(ProfilingStatModeMutateHints):     ps.countModeMutateHints.get(),
+		string(ProfilingStatModeSmash):           ps.countModeSmash.get(),
+		string(ProfilingStatModeMutateFromSmash): ps.countModeMutateFromSmash.get(),
+		// mutators
+		string(ProfilingStatMutatorSquashAny):  ps.countMutatorSquashAny.get(),
+		string(ProfilingStatMutatorSplice):     ps.countMutatorSplice.get(),
+		string(ProfilingStatMutatorInsertCall): ps.countMutatorInsertCall.get(),
+		string(ProfilingStatMutatorMutateArg):  ps.countMutatorMutateArg.get(),
+		string(ProfilingStatMutatorRemoveCall): ps.countMutatorRemoveCall.get(),
 	}
 }
 
 func (fuzzer *Fuzzer) StartProfilingLogger() {
-	// TODO go routine start log on the file
-	// TODO go routine logs on the dashboard
 	// TODO log actual nice string instead of object
 	go func() {
-		modes := [4]ProfilingCounterName{
+		modes := []ProfilingModeName{
 			ProfilingStatModeGenerate,
 			ProfilingStatModeMutate,
 			ProfilingStatModeMutateHints,
 			ProfilingStatModeSmash,
+			ProfilingStatModeMutateFromSmash,
 		}
 
-		prevCounts := map[ProfilingCounterName]uint64{}
+		mutators := []ProfilingMutatorName{
+			ProfilingStatMutatorSquashAny,
+			ProfilingStatMutatorSplice,
+			ProfilingStatMutatorInsertCall,
+			ProfilingStatMutatorMutateArg,
+			ProfilingStatMutatorRemoveCall,
+		}
+
+		prevCounts := map[string]uint64{}
 
 		for {
 			time.Sleep(10 * time.Second)
@@ -79,32 +101,59 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			fuzzer.Logf(0, "logging total counts: %v", counts)
 
 			// TODO lock the stats map?
-			//fuzzer.profilingStats.lock.Lock()
 
-			for _, modeName := range modes {
+			for _, mode := range modes {
+				modeName := string(mode)
 				current := counts[modeName]
 				delta := current - prevCounts[modeName]
-				fuzzer.stats[string(modeName)] = delta
+
+				fuzzer.stats[modeName] = delta
 				prevCounts[modeName] = current
 			}
 
-			//fuzzer.profilingStats.lock.Unlock()
+			for _, mutator := range mutators {
+				mutatorName := string(mutator)
+				current := counts[mutatorName]
+				delta := current - prevCounts[mutatorName]
+
+				fuzzer.stats[mutatorName] = delta
+				prevCounts[mutatorName] = current
+			}
 		}
 	}()
 }
 
-func (ps *ProfilingStats) IncCounter(counterName ProfilingCounterName) {
-	switch counterName {
+func (ps *ProfilingStats) IncModeCounter(mode ProfilingModeName) {
+	switch mode {
 	case ProfilingStatModeGenerate:
-		ps.totalModeGenerate.inc()
+		ps.countModeGenerate.inc()
 	case ProfilingStatModeMutate:
-		ps.totalModeMutate.inc()
+		ps.countModeMutate.inc()
 	case ProfilingStatModeMutateHints:
-		ps.totalModeMutateHints.inc()
+		ps.countModeMutateHints.inc()
 	case ProfilingStatModeSmash:
-		ps.totalModeSmash.inc()
+		ps.countModeSmash.inc()
+	case ProfilingStatModeMutateFromSmash:
+		ps.countModeMutateFromSmash.inc()
 	default:
-		// FIXME
+		panic(fmt.Sprintf("missing switch case for mode '%v' in IncModeCounter", string(mode)))
+	}
+}
+
+func (ps *ProfilingStats) IncMutatorCounter(mutator ProfilingMutatorName) {
+	switch mutator {
+	case ProfilingStatMutatorSquashAny:
+		ps.countMutatorSquashAny.inc()
+	case ProfilingStatMutatorSplice:
+		ps.countMutatorSplice.inc()
+	case ProfilingStatMutatorInsertCall:
+		ps.countMutatorInsertCall.inc()
+	case ProfilingStatMutatorMutateArg:
+		ps.countMutatorMutateArg.inc()
+	case ProfilingStatMutatorRemoveCall:
+		ps.countMutatorRemoveCall.inc()
+	default:
+		panic(fmt.Sprintf("missing switch case for mutator '%v' in IncMutatorCounter", string(mutator)))
 	}
 }
 

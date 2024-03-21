@@ -61,7 +61,7 @@ func (jp *jobPriority) saveID(id int64) {
 }
 
 func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
-	fuzzer.profilingStats.IncCounter(ProfilingStatModeGenerate)
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeGenerate)
 	p := fuzzer.target.Generate(rnd,
 		prog.RecommendedCalls,
 		fuzzer.ChoiceTable())
@@ -73,17 +73,18 @@ func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 }
 
 func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
-	fuzzer.profilingStats.IncCounter(ProfilingStatModeMutate)
 	p := fuzzer.Config.Corpus.ChooseProgram(rnd)
 	if p == nil {
 		return nil
 	}
 	newP := p.Clone()
-	newP.Mutate(rnd,
+	newP.MutateWithProfiling(rnd,
 		prog.RecommendedCalls,
 		fuzzer.ChoiceTable(),
 		fuzzer.Config.NoMutateCalls,
 		fuzzer.Config.Corpus.Programs(),
+		fuzzer.profilingStats,
+		false,
 	)
 	return &Request{
 		Prog:       newP,
@@ -292,17 +293,20 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		})
 	}
 
-	fuzzer.profilingStats.IncCounter(ProfilingStatModeSmash)
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeSmash)
 	fuzzer.stats["STATS_REMOVE_SMASH"]++ // FIXME remove: test only
 
 	const iters = 100
 	rnd := fuzzer.rand()
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
-		p.Mutate(rnd, prog.RecommendedCalls,
+		p.MutateWithProfiling(rnd, prog.RecommendedCalls,
 			fuzzer.ChoiceTable(),
 			fuzzer.Config.NoMutateCalls,
-			fuzzer.Config.Corpus.Programs())
+			fuzzer.Config.Corpus.Programs(),
+			fuzzer.profilingStats,
+			true,
+		)
 		result := fuzzer.exec(job, &Request{
 			Prog:       p,
 			NeedSignal: true,
@@ -376,8 +380,6 @@ type hintsJob struct {
 }
 
 func (job *hintsJob) run(fuzzer *Fuzzer) {
-	fuzzer.profilingStats.IncCounter(ProfilingStatModeMutateHints)
-	fuzzer.stats["STATS_REMOVE_HINTS"]++ // FIXME remove: test only
 	// First execute the original program to dump comparisons from KCOV.
 	p := job.p
 	result := fuzzer.exec(job, &Request{
@@ -391,6 +393,8 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 	// Then mutate the initial program for every match between
 	// a syscall argument and a comparison operand.
 	// Execute each of such mutants to check if it gives new coverage.
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateHints)
+	fuzzer.stats["STATS_REMOVE_HINTS"]++ // FIXME remove: test only
 	p.MutateWithHints(job.call, result.Info.Calls[job.call].Comps,
 		func(p *prog.Prog) bool {
 			result := fuzzer.exec(job, &Request{

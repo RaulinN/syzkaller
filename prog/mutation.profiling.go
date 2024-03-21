@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2015 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -8,6 +8,7 @@ package prog
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/google/syzkaller/pkg/fuzzer"
 	"math"
 	"math/rand"
 	"sort"
@@ -52,6 +53,53 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 		case r.nOutOf(10, 11):
 			ok = ctx.mutateArg()
 		default:
+			ok = ctx.removeCall()
+		}
+	}
+	p.sanitizeFix()
+	p.debugValidate()
+	if got := len(p.Calls); got < 1 || got > ncalls {
+		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
+	}
+}
+
+func (p *Prog) MutateWithProfiling(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog, ps *fuzzer.ProfilingStats, fromSmash bool) {
+	if fromSmash {
+		ps.IncModeCounter(fuzzer.ProfilingStatModeMutateFromSmash)
+	} else {
+		ps.IncModeCounter(fuzzer.ProfilingStatModeMutate)
+	}
+
+	r := newRand(p.Target, rs)
+	if ncalls < len(p.Calls) {
+		ncalls = len(p.Calls)
+	}
+	ctx := &mutator{
+		p:        p,
+		r:        r,
+		ncalls:   ncalls,
+		ct:       ct,
+		noMutate: noMutate,
+		corpus:   corpus,
+	}
+	for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
+		switch {
+		case r.oneOf(5):
+			// Not all calls have anything squashable,
+			// so this has lower priority in reality.
+			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorSquashAny)
+			ok = ctx.squashAny()
+		case r.nOutOf(1, 100):
+			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorSplice)
+			ok = ctx.splice()
+		case r.nOutOf(20, 31):
+			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorInsertCall)
+			ok = ctx.insertCall()
+		case r.nOutOf(10, 11):
+			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorMutateArg)
+			ok = ctx.mutateArg()
+		default:
+			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorRemoveCall)
 			ok = ctx.removeCall()
 		}
 	}

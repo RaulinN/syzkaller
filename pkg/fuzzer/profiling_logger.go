@@ -4,20 +4,8 @@ import "time"
 
 func (fuzzer *Fuzzer) StartProfilingLogger() {
 	go func() {
-		modes := []ProfilingModeName{
-			ProfilingStatModeGenerate,
-			ProfilingStatModeMutate,
-			ProfilingStatModeMutateHints,
-			ProfilingStatModeSmash,
-			ProfilingStatModeMutateFromSmash,
-		}
-		mutators := []ProfilingMutatorName{
-			ProfilingStatMutatorSquashAny,
-			ProfilingStatMutatorSplice,
-			ProfilingStatMutatorInsertCall,
-			ProfilingStatMutatorMutateArg,
-			ProfilingStatMutatorRemoveCall,
-		}
+		modes := allModes()
+		mutators := allMutators()
 
 		prevCounts := map[string]uint64{}
 
@@ -25,13 +13,21 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			time.Sleep(30 * time.Second)
 
 			counts := fuzzer.profilingStats.allCounts()
-			prettyCounts, err := Prettify(fuzzer.profilingStats.allCounts())
+			prettyCounts, err := Prettify(counts)
 			if err != nil {
 				fuzzer.Logf(0, "ERROR encoding counts map to JSON")
 			}
 			fuzzer.Logf(0, "logging total counts: %v", prettyCounts)
 
+			durations := fuzzer.profilingStats.allDurations()
+			prettyDurations, err := Prettify(durations)
+			if err != nil {
+				fuzzer.Logf(0, "ERROR encoding duration map to JSON")
+			}
+			fuzzer.Logf(0, "logging total durations: %v", prettyDurations)
+
 			// TODO lock the stats map?
+			// TODO display durations on dashboard?
 			for _, mode := range modes {
 				modeName := string(mode)
 				current := counts[modeName]

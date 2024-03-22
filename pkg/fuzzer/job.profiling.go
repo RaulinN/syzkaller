@@ -8,6 +8,7 @@ package fuzzer
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/google/syzkaller/pkg/corpus"
 	"github.com/google/syzkaller/pkg/cover"
@@ -62,9 +63,15 @@ func (jp *jobPriority) saveID(id int64) {
 
 func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeGenerate)
+	start := time.Now()
+
 	p := fuzzer.target.Generate(rnd,
 		prog.RecommendedCalls,
 		fuzzer.ChoiceTable())
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeGenerate, delta)
+
 	return &Request{
 		Prog:       p,
 		NeedSignal: true,
@@ -99,6 +106,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	newP := p.Clone()
 
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
+	start := time.Now()
 
 	obs := newP.MutateWithObserver(rnd,
 		prog.RecommendedCalls,
@@ -106,7 +114,11 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		fuzzer.Config.NoMutateCalls,
 		fuzzer.Config.Corpus.Programs(),
 	)
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
 	profileMutateObserver(fuzzer, obs)
+
 	return &Request{
 		Prog:       newP,
 		NeedSignal: true,
@@ -315,19 +327,26 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	}
 
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeSmash)
-	fuzzer.stats["STATS_REMOVE_SMASH"]++ // FIXME remove: test only
+	start := time.Now()
 
 	const iters = 100
 	rnd := fuzzer.rand()
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
+
 		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
+		startInside := time.Now()
+
 		obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
 			fuzzer.ChoiceTable(),
 			fuzzer.Config.NoMutateCalls,
 			fuzzer.Config.Corpus.Programs(),
 		)
+
+		deltaInside := time.Since(startInside)
+		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
 		profileMutateObserver(fuzzer, obs)
+
 		result := fuzzer.exec(job, &Request{
 			Prog:       p,
 			NeedSignal: true,
@@ -349,6 +368,9 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	if fuzzer.Config.FaultInjection && job.call >= 0 {
 		job.faultInjection(fuzzer)
 	}
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeSmash, delta)
 }
 
 func randomCollide(origP *prog.Prog, rnd *rand.Rand) *prog.Prog {
@@ -415,8 +437,11 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 	// a syscall argument and a comparison operand.
 	// Execute each of such mutants to check if it gives new coverage.
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateHints)
-	fuzzer.stats["STATS_REMOVE_HINTS"]++ // FIXME remove: test only
-	p.MutateWithHints(job.call, result.Info.Calls[job.call].Comps,
+	start := time.Now()
+
+	p.MutateWithHints(
+		job.call,
+		result.Info.Calls[job.call].Comps,
 		func(p *prog.Prog) bool {
 			result := fuzzer.exec(job, &Request{
 				Prog:       p,
@@ -424,5 +449,9 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 				stat:       statHint,
 			})
 			return !result.Stop
-		})
+		},
+	)
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateHints, delta)
 }

@@ -24,7 +24,27 @@ const (
 	ProfilingStatMutatorRemoveCall ProfilingMutatorName = prefix + "mutator removeCall"
 )
 
-// type StatDuration time.Duration // FIXME
+// careful, a new slice is generated each time. Don't abuse
+func allModes() []ProfilingModeName {
+	return []ProfilingModeName{
+		ProfilingStatModeGenerate,
+		ProfilingStatModeMutate,
+		ProfilingStatModeMutateHints,
+		ProfilingStatModeSmash,
+		ProfilingStatModeMutateFromSmash,
+	}
+}
+
+// careful, a new slice is generated each time. Don't abuse
+func allMutators() []ProfilingMutatorName {
+	return []ProfilingMutatorName{
+		ProfilingStatMutatorSquashAny,
+		ProfilingStatMutatorSplice,
+		ProfilingStatMutatorInsertCall,
+		ProfilingStatMutatorMutateArg,
+		ProfilingStatMutatorRemoveCall,
+	}
+}
 
 // https://siongui.github.io/2016/01/30/go-pretty-print-variable/
 func Prettify(v interface{}) (string, error) {

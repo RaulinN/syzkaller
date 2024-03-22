@@ -140,21 +140,25 @@ func (ps *ProfilingStats) IncModeCounter(mode ProfilingModeName) {
 	}
 }
 
-func (ps *ProfilingStats) IncMutatorCounter(mutator ProfilingMutatorName) {
+func (ps *ProfilingStats) AddMutatorCounter(mutator ProfilingMutatorName, value int) {
 	switch mutator {
 	case ProfilingStatMutatorSquashAny:
-		ps.countMutatorSquashAny.inc()
+		ps.countMutatorSquashAny.add(value)
 	case ProfilingStatMutatorSplice:
-		ps.countMutatorSplice.inc()
+		ps.countMutatorSplice.add(value)
 	case ProfilingStatMutatorInsertCall:
-		ps.countMutatorInsertCall.inc()
+		ps.countMutatorInsertCall.add(value)
 	case ProfilingStatMutatorMutateArg:
-		ps.countMutatorMutateArg.inc()
+		ps.countMutatorMutateArg.add(value)
 	case ProfilingStatMutatorRemoveCall:
-		ps.countMutatorRemoveCall.inc()
+		ps.countMutatorRemoveCall.add(value)
 	default:
 		panic(fmt.Sprintf("missing switch case for mutator '%v' in IncMutatorCounter", string(mutator)))
 	}
+}
+
+func (ps *ProfilingStats) IncMutatorCounter(mutator ProfilingMutatorName) {
+	ps.AddMutatorCounter(mutator, 1)
 }
 
 func (s *StatCount) get() uint64 {

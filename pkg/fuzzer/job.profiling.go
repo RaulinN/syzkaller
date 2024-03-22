@@ -72,20 +72,41 @@ func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	}
 }
 
+func profileMutateObserver(fuzzer *Fuzzer, observer map[prog.MutatorIndex]int) {
+	for k, v := range observer {
+		switch k {
+		case prog.MutatorIndexSquashAny:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorSquashAny, v)
+		case prog.MutatorIndexSplice:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorSplice, v)
+		case prog.MutatorIndexInsertCall:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorInsertCall, v)
+		case prog.MutatorIndexMutateArg:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorMutateArg, v)
+		case prog.MutatorIndexRemoveCall:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorRemoveCall, v)
+		default:
+			panic(fmt.Sprintf("mutator index '%v' case switch unknown in profileMutateObserver", k))
+		}
+	}
+}
+
 func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	p := fuzzer.Config.Corpus.ChooseProgram(rnd)
 	if p == nil {
 		return nil
 	}
 	newP := p.Clone()
-	newP.MutateWithProfiling(rnd,
+
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
+
+	obs := newP.MutateWithObserver(rnd,
 		prog.RecommendedCalls,
 		fuzzer.ChoiceTable(),
 		fuzzer.Config.NoMutateCalls,
 		fuzzer.Config.Corpus.Programs(),
-		fuzzer.profilingStats,
-		false,
 	)
+	profileMutateObserver(fuzzer, obs)
 	return &Request{
 		Prog:       newP,
 		NeedSignal: true,
@@ -300,13 +321,13 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	rnd := fuzzer.rand()
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
-		p.MutateWithProfiling(rnd, prog.RecommendedCalls,
+		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
+		obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
 			fuzzer.ChoiceTable(),
 			fuzzer.Config.NoMutateCalls,
 			fuzzer.Config.Corpus.Programs(),
-			fuzzer.profilingStats,
-			true,
 		)
+		profileMutateObserver(fuzzer, obs)
 		result := fuzzer.exec(job, &Request{
 			Prog:       p,
 			NeedSignal: true,

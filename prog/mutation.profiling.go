@@ -8,7 +8,6 @@ package prog
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/google/syzkaller/pkg/fuzzer"
 	"math"
 	"math/rand"
 	"sort"
@@ -63,12 +62,18 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 	}
 }
 
-func (p *Prog) MutateWithProfiling(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog, ps *fuzzer.ProfilingStats, fromSmash bool) {
-	if fromSmash {
-		ps.IncModeCounter(fuzzer.ProfilingStatModeMutateFromSmash)
-	} else {
-		ps.IncModeCounter(fuzzer.ProfilingStatModeMutate)
-	}
+type MutatorIndex int
+
+const (
+	MutatorIndexSquashAny MutatorIndex = iota
+	MutatorIndexSplice
+	MutatorIndexInsertCall
+	MutatorIndexMutateArg
+	MutatorIndexRemoveCall
+)
+
+func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) map[MutatorIndex]int {
+	observer := map[MutatorIndex]int{} // count utilization of mutators
 
 	r := newRand(p.Target, rs)
 	if ncalls < len(p.Calls) {
@@ -87,19 +92,19 @@ func (p *Prog) MutateWithProfiling(rs rand.Source, ncalls int, ct *ChoiceTable, 
 		case r.oneOf(5):
 			// Not all calls have anything squashable,
 			// so this has lower priority in reality.
-			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorSquashAny)
+			observer[MutatorIndexSquashAny]++
 			ok = ctx.squashAny()
 		case r.nOutOf(1, 100):
-			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorSplice)
+			observer[MutatorIndexSplice]++
 			ok = ctx.splice()
 		case r.nOutOf(20, 31):
-			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorInsertCall)
+			observer[MutatorIndexInsertCall]++
 			ok = ctx.insertCall()
 		case r.nOutOf(10, 11):
-			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorMutateArg)
+			observer[MutatorIndexMutateArg]++
 			ok = ctx.mutateArg()
 		default:
-			ps.IncMutatorCounter(fuzzer.ProfilingStatMutatorRemoveCall)
+			observer[MutatorIndexRemoveCall]++
 			ok = ctx.removeCall()
 		}
 	}
@@ -108,6 +113,8 @@ func (p *Prog) MutateWithProfiling(rs rand.Source, ncalls int, ct *ChoiceTable, 
 	if got := len(p.Calls); got < 1 || got > ncalls {
 		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
 	}
+
+	return observer
 }
 
 // Internal state required for performing mutations -- currently this matches

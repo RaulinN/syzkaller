@@ -3,7 +3,6 @@
 package fuzzer
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -11,60 +10,51 @@ type ProfilingStats struct {
 	// counters for the modes of operations. The mutate mode is split
 	// into two separate counters: simple mutate operations and mutate
 	// operations performed as part of a smash request
-	countModeGenerate        StatCount
-	countModeMutate          StatCount
-	countModeMutateHints     StatCount
-	countModeSmash           StatCount
-	countModeMutateFromSmash StatCount
+	countModes map[ProfilingModeName]*StatCount
 
 	// counters for individual mutators (see mutation.profiling.go)
-	countMutatorSquashAny  StatCount
-	countMutatorSplice     StatCount
-	countMutatorInsertCall StatCount
-	countMutatorMutateArg  StatCount
-	countMutatorRemoveCall StatCount
+	countMutators map[ProfilingMutatorName]*StatCount
 
 	// time elapsed executing modes of operations
-	/*durationModeGenerate        *AtomicDuration
-	durationModeMutate          *AtomicDuration
-	durationModeMutateHints     *AtomicDuration
-	durationModeSmash           *AtomicDuration
-	durationModeMutateFromSmash *AtomicDuration*/
-
 	durationModes map[ProfilingModeName]*AtomicDuration
 }
 
 func NewProfilingStats() *ProfilingStats {
 	ps := ProfilingStats{
-		/*durationModeGenerate:        NewAtomicDuration(),
-		durationModeMutate:          NewAtomicDuration(),
-		durationModeMutateHints:     NewAtomicDuration(),
-		durationModeSmash:           NewAtomicDuration(),
-		durationModeMutateFromSmash: NewAtomicDuration(),*/
+		countModes:    make(map[ProfilingModeName]*StatCount),
+		countMutators: make(map[ProfilingMutatorName]*StatCount),
 		durationModes: make(map[ProfilingModeName]*AtomicDuration),
 	}
 
 	for _, mode := range allModes() {
+		var stat StatCount = 0
+		ps.countModes[mode] = &stat
 		ps.durationModes[mode] = NewAtomicDuration()
+	}
+
+	for _, mutator := range allMutators() {
+		var stat StatCount = 0
+		ps.countMutators[mutator] = &stat
 	}
 
 	return &ps
 }
 
 func (ps *ProfilingStats) allCounts() map[string]uint64 {
+	// TODO make cleaner
 	return map[string]uint64{
 		// modes of operation
-		string(ProfilingStatModeGenerate):        ps.countModeGenerate.get(),
-		string(ProfilingStatModeMutate):          ps.countModeMutate.get(),
-		string(ProfilingStatModeMutateHints):     ps.countModeMutateHints.get(),
-		string(ProfilingStatModeSmash):           ps.countModeSmash.get(),
-		string(ProfilingStatModeMutateFromSmash): ps.countModeMutateFromSmash.get(),
+		string(ProfilingStatModeGenerate):        ps.countModes[ProfilingStatModeGenerate].get(),
+		string(ProfilingStatModeMutate):          ps.countModes[ProfilingStatModeMutate].get(),
+		string(ProfilingStatModeMutateHints):     ps.countModes[ProfilingStatModeMutateHints].get(),
+		string(ProfilingStatModeSmash):           ps.countModes[ProfilingStatModeSmash].get(),
+		string(ProfilingStatModeMutateFromSmash): ps.countModes[ProfilingStatModeMutateFromSmash].get(),
 		// mutators
-		string(ProfilingStatMutatorSquashAny):  ps.countMutatorSquashAny.get(),
-		string(ProfilingStatMutatorSplice):     ps.countMutatorSplice.get(),
-		string(ProfilingStatMutatorInsertCall): ps.countMutatorInsertCall.get(),
-		string(ProfilingStatMutatorMutateArg):  ps.countMutatorMutateArg.get(),
-		string(ProfilingStatMutatorRemoveCall): ps.countMutatorRemoveCall.get(),
+		string(ProfilingStatMutatorSquashAny):  ps.countMutators[ProfilingStatMutatorSquashAny].get(),
+		string(ProfilingStatMutatorSplice):     ps.countMutators[ProfilingStatMutatorSplice].get(),
+		string(ProfilingStatMutatorInsertCall): ps.countMutators[ProfilingStatMutatorInsertCall].get(),
+		string(ProfilingStatMutatorMutateArg):  ps.countMutators[ProfilingStatMutatorMutateArg].get(),
+		string(ProfilingStatMutatorRemoveCall): ps.countMutators[ProfilingStatMutatorRemoveCall].get(),
 	}
 }
 
@@ -80,60 +70,16 @@ func (ps *ProfilingStats) allDurations() map[string]time.Duration {
 }
 
 func (ps *ProfilingStats) IncModeCounter(mode ProfilingModeName) {
-	switch mode {
-	case ProfilingStatModeGenerate:
-		ps.countModeGenerate.inc()
-	case ProfilingStatModeMutate:
-		ps.countModeMutate.inc()
-	case ProfilingStatModeMutateHints:
-		ps.countModeMutateHints.inc()
-	case ProfilingStatModeSmash:
-		ps.countModeSmash.inc()
-	case ProfilingStatModeMutateFromSmash:
-		ps.countModeMutateFromSmash.inc()
-	default:
-		panic(fmt.Sprintf("missing switch case for mode '%v' in IncModeCounter", string(mode)))
-	}
+	ps.countModes[mode].inc()
 }
 
 func (ps *ProfilingStats) AddMutatorCounter(mutator ProfilingMutatorName, value int) {
-	switch mutator {
-	case ProfilingStatMutatorSquashAny:
-		ps.countMutatorSquashAny.add(value)
-	case ProfilingStatMutatorSplice:
-		ps.countMutatorSplice.add(value)
-	case ProfilingStatMutatorInsertCall:
-		ps.countMutatorInsertCall.add(value)
-	case ProfilingStatMutatorMutateArg:
-		ps.countMutatorMutateArg.add(value)
-	case ProfilingStatMutatorRemoveCall:
-		ps.countMutatorRemoveCall.add(value)
-	default:
-		panic(fmt.Sprintf("missing switch case for mutator '%v' in IncMutatorCounter", string(mutator)))
-	}
+	ps.countMutators[mutator].add(value)
 }
 
 func (ps *ProfilingStats) IncMutatorCounter(mutator ProfilingMutatorName) {
 	ps.AddMutatorCounter(mutator, 1)
 }
-
-/*
-func (ps *ProfilingStats) AddModeDuration2(mode ProfilingModeName, duration time.Duration) {
-	switch mode {
-	case ProfilingStatModeGenerate:
-		ps.durationModeGenerate.Add(duration)
-	case ProfilingStatModeMutate:
-		ps.durationModeMutate.Add(duration)
-	case ProfilingStatModeMutateHints:
-		ps.durationModeMutateHints.Add(duration)
-	case ProfilingStatModeSmash:
-		ps.durationModeSmash.Add(duration)
-	case ProfilingStatModeMutateFromSmash:
-		ps.durationModeMutateFromSmash.Add(duration)
-	default:
-		panic(fmt.Sprintf("missing switch case for mode '%v' in AddModeDuration", string(mode)))
-	}
-}*/
 
 func (ps *ProfilingStats) AddModeDuration(mode ProfilingModeName, duration time.Duration) {
 	ps.durationModes[mode].Add(duration)

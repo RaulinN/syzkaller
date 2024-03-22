@@ -1,5 +1,9 @@
 package fuzzer
 
+import (
+	"encoding/json"
+)
+
 type ProfilingModeName string
 type ProfilingMutatorName string
 
@@ -21,3 +25,12 @@ const (
 )
 
 // type StatDuration time.Duration // FIXME
+
+// https://siongui.github.io/2016/01/30/go-pretty-print-variable/
+func Prettify(v interface{}) (string, error) {
+	b, err := json.MarshalIndent(v, "", "  ") // to json
+	if err == nil {
+		return string(b), nil
+	}
+	return "", err
+}

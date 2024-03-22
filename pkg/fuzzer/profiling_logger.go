@@ -3,7 +3,6 @@ package fuzzer
 import "time"
 
 func (fuzzer *Fuzzer) StartProfilingLogger() {
-	// TODO log actual nice string instead of object
 	go func() {
 		modes := []ProfilingModeName{
 			ProfilingStatModeGenerate,
@@ -26,7 +25,11 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			time.Sleep(30 * time.Second)
 
 			counts := fuzzer.profilingStats.allCounts()
-			fuzzer.Logf(0, "logging total counts: %v", counts)
+			prettyCounts, err := Prettify(fuzzer.profilingStats.allCounts())
+			if err != nil {
+				fuzzer.Logf(0, "ERROR encoding counts map to JSON")
+			}
+			fuzzer.Logf(0, "logging total counts: %v", prettyCounts)
 
 			// TODO lock the stats map?
 			for _, mode := range modes {

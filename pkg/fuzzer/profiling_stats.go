@@ -4,33 +4,7 @@ package fuzzer
 
 import (
 	"fmt"
-	"sync/atomic"
-	"time"
 )
-
-type ProfilingModeName string
-type ProfilingMutatorName string
-
-const prefix = "[profiling] "
-const (
-	ProfilingStatModeGenerate        ProfilingModeName = prefix + "mode generate"
-	ProfilingStatModeMutate          ProfilingModeName = prefix + "mode mutate"
-	ProfilingStatModeMutateHints     ProfilingModeName = prefix + "mode mutate with hints"
-	ProfilingStatModeSmash           ProfilingModeName = prefix + "mode smash"
-	ProfilingStatModeMutateFromSmash ProfilingModeName = prefix + "mode mutate (from smash)"
-)
-
-const (
-	ProfilingStatMutatorSquashAny  ProfilingMutatorName = prefix + "mutator squashAny"
-	ProfilingStatMutatorSplice     ProfilingMutatorName = prefix + "mutator splice"
-	ProfilingStatMutatorInsertCall ProfilingMutatorName = prefix + "mutator insertCall"
-	ProfilingStatMutatorMutateArg  ProfilingMutatorName = prefix + "mutator mutateArg"
-	ProfilingStatMutatorRemoveCall ProfilingMutatorName = prefix + "mutator removeCall"
-)
-
-type StatCount uint64
-
-// type StatDuration time.Duration // FIXME
 
 type ProfilingStats struct {
 	countModeGenerate        StatCount
@@ -72,57 +46,6 @@ func (ps *ProfilingStats) allCounts() map[string]uint64 {
 	}
 }
 
-func (fuzzer *Fuzzer) StartProfilingLogger() {
-	// TODO log actual nice string instead of object
-	go func() {
-		modes := []ProfilingModeName{
-			ProfilingStatModeGenerate,
-			ProfilingStatModeMutate,
-			ProfilingStatModeMutateHints,
-			ProfilingStatModeSmash,
-			ProfilingStatModeMutateFromSmash,
-		}
-
-		mutators := []ProfilingMutatorName{
-			ProfilingStatMutatorSquashAny,
-			ProfilingStatMutatorSplice,
-			ProfilingStatMutatorInsertCall,
-			ProfilingStatMutatorMutateArg,
-			ProfilingStatMutatorRemoveCall,
-		}
-
-		prevCounts := map[string]uint64{}
-
-		for {
-			time.Sleep(10 * time.Second)
-
-			counts := fuzzer.profilingStats.allCounts()
-
-			fuzzer.Logf(0, "logging total counts: %v", counts)
-
-			// TODO lock the stats map?
-
-			for _, mode := range modes {
-				modeName := string(mode)
-				current := counts[modeName]
-				delta := current - prevCounts[modeName]
-
-				fuzzer.stats[modeName] = delta
-				prevCounts[modeName] = current
-			}
-
-			for _, mutator := range mutators {
-				mutatorName := string(mutator)
-				current := counts[mutatorName]
-				delta := current - prevCounts[mutatorName]
-
-				fuzzer.stats[mutatorName] = delta
-				prevCounts[mutatorName] = current
-			}
-		}
-	}()
-}
-
 func (ps *ProfilingStats) IncModeCounter(mode ProfilingModeName) {
 	switch mode {
 	case ProfilingStatModeGenerate:
@@ -159,24 +82,4 @@ func (ps *ProfilingStats) AddMutatorCounter(mutator ProfilingMutatorName, value 
 
 func (ps *ProfilingStats) IncMutatorCounter(mutator ProfilingMutatorName) {
 	ps.AddMutatorCounter(mutator, 1)
-}
-
-func (s *StatCount) get() uint64 {
-	return atomic.LoadUint64((*uint64)(s))
-}
-
-func (s *StatCount) inc() {
-	s.add(1)
-}
-
-func (s *StatCount) add(v int) {
-	atomic.AddUint64((*uint64)(s), uint64(v))
-}
-
-func (s *StatCount) set(v int) {
-	atomic.StoreUint64((*uint64)(s), uint64(v))
-}
-
-func (s *StatCount) reset(swapContainer *uint64) {
-	atomic.SwapUint64(swapContainer, uint64(0))
 }

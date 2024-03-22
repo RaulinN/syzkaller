@@ -10,7 +10,7 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 		prevCounts := map[string]uint64{}
 
 		for {
-			time.Sleep(30 * time.Second)
+			time.Sleep(15 * time.Second)
 
 			counts := fuzzer.profilingStats.allCounts()
 			prettyCounts, err := Prettify(counts)
@@ -28,7 +28,10 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			if err != nil {
 				fuzzer.Logf(0, "ERROR encoding duration map to JSON")
 			}
-			fuzzer.Logf(0, "logging total durations: %v", prettyDurations)
+			ptest, _ := Prettify(durations) // FIXME remove
+			fuzzer.Logf(0, "logging total durations (1 - ints): %v", ptest)
+			fuzzer.Logf(0, "logging total durations (2 - hh:mm:ss): %v", prettyDurations)
+			fuzzer.Logf(0, "------------------------------------------------")
 
 			// TODO lock the stats map?
 			// TODO display durations on dashboard?

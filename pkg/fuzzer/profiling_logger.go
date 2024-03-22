@@ -20,7 +20,11 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			fuzzer.Logf(0, "logging total counts: %v", prettyCounts)
 
 			durations := fuzzer.profilingStats.allDurations()
-			prettyDurations, err := Prettify(durations)
+			displayDurations := map[string]string{}
+			for k, v := range durations {
+				displayDurations[k] = v.String()
+			}
+			prettyDurations, err := Prettify(displayDurations)
 			if err != nil {
 				fuzzer.Logf(0, "ERROR encoding duration map to JSON")
 			}

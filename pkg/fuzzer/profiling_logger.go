@@ -33,8 +33,8 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			fuzzer.Logf(0, "logging total durations (2 - hh:mm:ss): %v", prettyDurations)
 			fuzzer.Logf(0, "------------------------------------------------")
 
-			// TODO lock the stats map?
 			// TODO display durations on dashboard?
+			fuzzer.mu.Lock()
 			for _, mode := range modes {
 				modeName := string(mode)
 				current := counts[modeName]
@@ -52,6 +52,8 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 				fuzzer.stats[mutatorName] = delta
 				prevCounts[mutatorName] = current
 			}
+
+			fuzzer.mu.Unlock()
 		}
 	}()
 }

@@ -212,8 +212,10 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
 	// they don't have a requestExecutionMode assigned => we ignore them
 	fuzzer.Logf(0, "in triageJob.run > after save, for job.requesterStat=%v w/ covChanged=%v", job.requesterStat, covChanged) // FIXME NICOLAS REMOVE
+	fuzzer.mu.Lock()
 	fuzzer.stats[ProfilingStatContribution(job.requesterStat)]++
 	fuzzer.stats[ProfilingStatContribution("ALL requesterStats")]++
+	fuzzer.mu.Unlock()
 
 	if fuzzer.Config.NewInputs != nil {
 		select {

@@ -121,7 +121,7 @@ type Request struct {
 	 * or not a certain mode is better than another at increasing coverage
 	 */
 	// FIXME NICOLAS check third bullet point
-	requesterExecutionMode ProfilingModeName
+	requesterStat string
 }
 
 type Result struct {
@@ -135,9 +135,9 @@ func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 	// it may result it concurrent modification of req.Prog.
 	if req.NeedSignal && res.Info != nil {
 		for call, info := range res.Info.Calls {
-			fuzzer.triageProgCall(req.Prog, &info, call, req.flags, req.requesterExecutionMode)
+			fuzzer.triageProgCall(req.Prog, &info, call, req.flags, req.requesterStat)
 		}
-		fuzzer.triageProgCall(req.Prog, &res.Info.Extra, -1, req.flags, req.requesterExecutionMode)
+		fuzzer.triageProgCall(req.Prog, &res.Info.Extra, -1, req.flags, req.requesterStat)
 	}
 	// Unblock threads that wait for the result.
 	req.result = res
@@ -152,7 +152,7 @@ func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 }
 
 func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *ipc.CallInfo, call int,
-	flags ProgTypes, requestExecutionMode ProfilingModeName) {
+	flags ProgTypes, requesterStat string) {
 	prio := signalPrio(p, info, call)
 	newMaxSignal := fuzzer.Cover.addRawMaxSignal(info.Signal, prio)
 	if newMaxSignal.Empty() {
@@ -166,13 +166,13 @@ func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *ipc.CallInfo, call int,
 	}
 	fuzzer.Logf(2, "found new signal in call %d in %s", call, p)
 	fuzzer.startJob(&triageJob{
-		p:                      p.Clone(),
-		call:                   call,
-		info:                   *info,
-		newSignal:              newMaxSignal,
-		flags:                  flags,
-		jobPriority:            triageJobPrio(flags),
-		requesterExecutionMode: requestExecutionMode,
+		p:             p.Clone(),
+		call:          call,
+		info:          *info,
+		newSignal:     newMaxSignal,
+		flags:         flags,
+		jobPriority:   triageJobPrio(flags),
+		requesterStat: requesterStat,
 	})
 }
 

@@ -73,10 +73,10 @@ func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeGenerate, delta)
 
 	return &Request{
-		Prog:                   p,
-		NeedSignal:             true,
-		stat:                   statGenerate,
-		requesterExecutionMode: ProfilingStatModeGenerate,
+		Prog:          p,
+		NeedSignal:    true,
+		stat:          statGenerate,
+		requesterStat: statGenerate,
 	}
 }
 
@@ -121,10 +121,10 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	profileMutateObserver(fuzzer, obs)
 
 	return &Request{
-		Prog:                   newP,
-		NeedSignal:             true,
-		stat:                   statFuzz,
-		requesterExecutionMode: ProfilingStatModeMutate,
+		Prog:          newP,
+		NeedSignal:    true,
+		stat:          statFuzz,
+		requesterStat: statFuzz,
 	}
 }
 
@@ -137,10 +137,11 @@ func candidateRequest(input Candidate) *Request {
 		flags |= progSmashed
 	}
 	return &Request{
-		Prog:       input.Prog,
-		NeedSignal: true,
-		stat:       statCandidate,
-		flags:      flags,
+		Prog:          input.Prog,
+		NeedSignal:    true,
+		stat:          statCandidate,
+		flags:         flags,
+		requesterStat: statCandidate,
 	}
 }
 
@@ -158,7 +159,7 @@ type triageJob struct {
 	// in case the coverage increase is indeed real, we need to be able to
 	// attribute this contribution to the correct execution mode (coming
 	// from the request that started the triageJob), hence we store it
-	requesterExecutionMode ProfilingModeName
+	requesterStat string
 }
 
 func triageJobPrio(flags ProgTypes) jobPriority {
@@ -169,23 +170,19 @@ func triageJobPrio(flags ProgTypes) jobPriority {
 }
 
 func (job *triageJob) run(fuzzer *Fuzzer) {
+	if job.requesterStat == "" {
+		fuzzer.Logf(0, "C-ERROR! started a triage job that does not have any requestStat!") // FIXME NICOLAS REMOVE
+	}
 	logCallName := "extra"
 	if job.call != -1 {
 		callName := job.p.Calls[job.call].Meta.Name
 		logCallName = fmt.Sprintf("call #%v %v", job.call, callName)
 	}
-	fuzzer.Logf(3, "triaging input for %v (new signal=%v)", logCallName, job.newSignal.Len())
+	fuzzer.Logf(0, "triaging input for %v (new signal=%v)", logCallName, job.newSignal.Len()) // FIXME NICOLAS LOG LEVEL BACK TO 3
 	// Compute input coverage and non-flaky signal for minimization.
 	info, stop := job.deflake(fuzzer)
 	if stop || info.newStableSignal.Empty() {
 		return
-	}
-
-	// At this point, we are certain that the request that started this triage job did indeed
-	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
-	// they don't have a requestExecutionMode assigned => we ignore them
-	if job.requesterExecutionMode != "" {
-		fuzzer.stats[ProfilingStatContribution(job.requesterExecutionMode)]++
 	}
 
 	if job.flags&progMinimized == 0 {
@@ -209,7 +206,15 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 		Cover:    info.cover.Serialize(),
 		RawCover: info.rawCover,
 	}
-	fuzzer.Config.Corpus.Save(input)
+
+	covChanged := fuzzer.Config.Corpus.Save(input)
+	// At this point, we are certain that the request that started this triage job did indeed
+	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
+	// they don't have a requestExecutionMode assigned => we ignore them
+	fuzzer.Logf(0, "in triageJob.run > after save, for job.requesterStat=%v w/ covChanged=%v", job.requesterStat, covChanged) // FIXME NICOLAS REMOVE
+	fuzzer.stats[ProfilingStatContribution(job.requesterStat)]++
+	fuzzer.stats[ProfilingStatContribution("ALL requesterStats")]++
+
 	if fuzzer.Config.NewInputs != nil {
 		select {
 		case <-fuzzer.ctx.Done():
@@ -230,12 +235,13 @@ func (job *triageJob) deflake(fuzzer *Fuzzer) (info deflakedCover, stop bool) {
 	var notExecuted int
 	for i := 0; i < signalRuns; i++ {
 		result := fuzzer.exec(job, &Request{
-			Prog:         job.p,
-			NeedSignal:   true,
-			NeedCover:    true,
-			NeedRawCover: fuzzer.Config.FetchRawCover,
-			stat:         statTriage,
-			flags:        progInTriage,
+			Prog:          job.p,
+			NeedSignal:    true,
+			NeedCover:     true,
+			NeedRawCover:  fuzzer.Config.FetchRawCover,
+			stat:          statTriage,
+			flags:         progInTriage,
+			requesterStat: job.requesterStat,
 		})
 		if result.Stop {
 			stop = true
@@ -278,9 +284,10 @@ func (job *triageJob) minimize(fuzzer *Fuzzer, newSignal signal.Signal) (stop bo
 			}
 			for i := 0; i < minimizeAttempts; i++ {
 				result := fuzzer.exec(job, &Request{
-					Prog:       p1,
-					NeedSignal: true,
-					stat:       statMinimize,
+					Prog:          p1,
+					NeedSignal:    true,
+					stat:          statMinimize,
+					requesterStat: statMinimize,
 				})
 				if result.Stop {
 					stop = true
@@ -362,18 +369,19 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		profileMutateObserver(fuzzer, obs)
 
 		result := fuzzer.exec(job, &Request{
-			Prog:                   p,
-			NeedSignal:             true,
-			stat:                   statSmash, // FIXME NICOLAS RECURSION
-			requesterExecutionMode: ProfilingStatModeMutateFromSmash,
+			Prog:          p,
+			NeedSignal:    true,
+			stat:          statSmash, // FIXME NICOLAS RECURSION
+			requesterStat: statFuzzFromSmash,
 		})
 		if result.Stop {
 			return
 		}
 		if fuzzer.Config.Collide {
 			result := fuzzer.exec(job, &Request{
-				Prog: randomCollide(p, rnd),
-				stat: statCollide,
+				Prog:          randomCollide(p, rnd),
+				stat:          statCollide,
+				requesterStat: statCollide,
 			})
 			if result.Stop {
 				return
@@ -417,8 +425,9 @@ func (job *smashJob) faultInjection(fuzzer *Fuzzer) {
 		newProg := job.p.Clone()
 		newProg.Calls[job.call].Props.FailNth = nth
 		result := fuzzer.exec(job, &Request{
-			Prog: job.p,
-			stat: statSmash,
+			Prog:          job.p,
+			stat:          statSmash,
+			requesterStat: statSmash, // FIXME NICOLAS maybe distinguish this cacse?
 		})
 		if result.Stop {
 			return
@@ -441,9 +450,10 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 	// First execute the original program to dump comparisons from KCOV.
 	p := job.p
 	result := fuzzer.exec(job, &Request{
-		Prog:      p,
-		NeedHints: true,
-		stat:      statSeed,
+		Prog:          p,
+		NeedHints:     true,
+		stat:          statSeed,
+		requesterStat: statSeedFromHint,
 	})
 	if result.Stop || result.Info == nil {
 		return
@@ -459,10 +469,10 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 		result.Info.Calls[job.call].Comps,
 		func(p *prog.Prog) bool {
 			result := fuzzer.exec(job, &Request{
-				Prog:                   p,
-				NeedSignal:             true,
-				stat:                   statHint, // FIXME NICOLAS RECURSION
-				requesterExecutionMode: ProfilingStatModeMutateHints,
+				Prog:          p,
+				NeedSignal:    true,
+				stat:          statHint, // FIXME NICOLAS RECURSION
+				requesterStat: statHint,
 			})
 			return !result.Stop
 		},

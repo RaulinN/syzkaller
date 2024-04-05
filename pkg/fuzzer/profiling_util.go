@@ -18,8 +18,8 @@ const (
 
 type ProfilingModeCoverageContribution = string
 
-func ProfilingStatContribution(mode ProfilingModeName) ProfilingModeCoverageContribution {
-	return string(mode) + " > coverage contribution"
+func ProfilingStatContribution(requesterStat string) ProfilingModeCoverageContribution {
+	return prefix + requesterStat + " > coverage contribution"
 }
 
 const (

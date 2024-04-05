@@ -110,7 +110,8 @@ type NewItemEvent struct {
 	NewCover []uint32
 }
 
-func (corpus *Corpus) Save(inp NewInput) {
+// returns whether or not the coverage was changed
+func (corpus *Corpus) Save(inp NewInput) bool {
 	progData := inp.Prog.Serialize()
 	sig := hash.String(progData)
 
@@ -158,7 +159,7 @@ func (corpus *Corpus) Save(inp NewInput) {
 		corpus.saveProgram(inp.Prog, inp.Signal)
 	}
 	corpus.signal.Merge(inp.Signal)
-	newCover := corpus.cover.MergeDiff(inp.Cover)
+	newCover, changed := corpus.cover.MergeDiff(inp.Cover)
 	if corpus.updates != nil {
 		select {
 		case <-corpus.ctx.Done():
@@ -170,6 +171,8 @@ func (corpus *Corpus) Save(inp NewInput) {
 		}:
 		}
 	}
+
+	return changed
 }
 
 func (corpus *Corpus) DiffSignal(s signal.Signal) signal.Signal {

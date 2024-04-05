@@ -178,7 +178,7 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 		callName := job.p.Calls[job.call].Meta.Name
 		logCallName = fmt.Sprintf("call #%v %v", job.call, callName)
 	}
-	fuzzer.Logf(0, "triaging input for %v (new signal=%v)", logCallName, job.newSignal.Len()) // FIXME NICOLAS LOG LEVEL BACK TO 3
+	fuzzer.Logf(3, "triaging input for %v (new signal=%v)", logCallName, job.newSignal.Len())
 	// Compute input coverage and non-flaky signal for minimization.
 	info, stop := job.deflake(fuzzer)
 	if stop || info.newStableSignal.Empty() {
@@ -207,13 +207,17 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 		RawCover: info.rawCover,
 	}
 
-	covChanged := fuzzer.Config.Corpus.Save(input)
+	covIncrease := fuzzer.Config.Corpus.Save(input)
+	covChanged := covIncrease > 0
 	// At this point, we are certain that the request that started this triage job did indeed
 	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
 	// they don't have a requestExecutionMode assigned => we ignore them
 	fuzzer.mu.Lock()
 	fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
 	fuzzer.stats[ProfilingAllStatsContribution(covChanged)]++
+
+	fuzzer.stats[ProfilingStatBasicBlocksCoverage(job.requesterStat)] += covIncrease
+	fuzzer.stats[ProfilingStatBasicBlocksCoverage("TEST ALL STATS")] += covIncrease // FIXME NICOLAS REMOVE
 	fuzzer.mu.Unlock()
 
 	if fuzzer.Config.NewInputs != nil {

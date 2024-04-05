@@ -11,7 +11,7 @@ type ProfilingMutatorName string
 const prefix = "[prof]"
 const (
 	ProfilingStatModeGenerate        ProfilingModeName = prefix + " mode generate"
-	ProfilingStatModeMutate          ProfilingModeName = prefix + " mode mutate"
+	ProfilingStatModeMutate          ProfilingModeName = prefix + " mode mutate (= fuzz)"
 	ProfilingStatModeMutateHints     ProfilingModeName = prefix + " mode mutate with hints"
 	ProfilingStatModeSmash           ProfilingModeName = prefix + " mode smash"
 	ProfilingStatModeMutateFromSmash ProfilingModeName = prefix + " mode mutate (from smash)"
@@ -27,6 +27,10 @@ func ProfilingStatContribution(requesterStat string, coverageIncrease bool) stri
 
 func ProfilingAllStatsContribution(coverageIncrease bool) string {
 	return ProfilingStatContribution("ALL requesterStats", coverageIncrease)
+}
+
+func ProfilingStatBasicBlocksCoverage(requesterStat string) string {
+	return fmt.Sprintf("%s %s > #basic blocks covered", prefix, requesterStat)
 }
 
 const (

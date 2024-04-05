@@ -7,7 +7,7 @@ import (
 type ProfilingModeName string
 type ProfilingMutatorName string
 
-const prefix = "[profiling] "
+const prefix = "[prof] "
 const (
 	ProfilingStatModeGenerate        ProfilingModeName = prefix + "mode generate"
 	ProfilingStatModeMutate          ProfilingModeName = prefix + "mode mutate"
@@ -19,7 +19,7 @@ const (
 type ProfilingModeCoverageContribution = string
 
 func ProfilingStatContribution(requesterStat string) ProfilingModeCoverageContribution {
-	return prefix + requesterStat + " > coverage contribution"
+	return prefix + requesterStat + " > cov. contribution"
 }
 
 const (
@@ -55,6 +55,14 @@ func allMutators() []ProfilingMutatorName {
 // https://siongui.github.io/2016/01/30/go-pretty-print-variable/
 func Prettify(v interface{}) (string, error) {
 	b, err := json.MarshalIndent(v, "", "  ") // to json
+	if err == nil {
+		return string(b), nil
+	}
+	return "", err
+}
+
+func ToJson(v interface{}) (string, error) {
+	b, err := json.Marshal(v) // to json
 	if err == nil {
 		return string(b), nil
 	}

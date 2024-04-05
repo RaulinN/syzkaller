@@ -9,29 +9,28 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 
 		prevCounts := map[string]uint64{}
 
+		// FIXME NICOLAS I believe this will actually be reset every hour (on executor creation) => make it persistent
 		for {
-			time.Sleep(15 * time.Second)
+			time.Sleep(60 * time.Second)
 
 			counts := fuzzer.profilingStats.allCounts()
-			prettyCounts, err := Prettify(counts)
+			countsJson, err := ToJson(counts)
 			if err != nil {
 				fuzzer.Logf(0, "ERROR encoding counts map to JSON")
 			}
-			fuzzer.Logf(0, "logging total counts: %v", prettyCounts)
 
 			durations := fuzzer.profilingStats.allDurations()
 			displayDurations := map[string]string{}
 			for k, v := range durations {
 				displayDurations[k] = v.String()
 			}
-			prettyDurations, err := Prettify(displayDurations)
+			durationsJson, err := ToJson(displayDurations)
 			if err != nil {
 				fuzzer.Logf(0, "ERROR encoding duration map to JSON")
 			}
-			ptest, _ := Prettify(durations) // FIXME remove
-			fuzzer.Logf(0, "logging total durations (1 - ints): %v", ptest)
-			fuzzer.Logf(0, "logging total durations (2 - hh:mm:ss): %v", prettyDurations)
-			fuzzer.Logf(0, "------------------------------------------------")
+
+			fuzzer.Logf(0, "logging total counts:%v", countsJson)
+			fuzzer.Logf(0, "logging total durations (hh:mm:ss):%v", durationsJson)
 
 			// TODO display durations on dashboard?
 			fuzzer.mu.Lock()

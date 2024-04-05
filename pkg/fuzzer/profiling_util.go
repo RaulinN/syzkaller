@@ -16,6 +16,12 @@ const (
 	ProfilingStatModeMutateFromSmash ProfilingModeName = prefix + "mode mutate (from smash)"
 )
 
+type ProfilingModeCoverageContribution = string
+
+func ProfilingStatContribution(mode ProfilingModeName) ProfilingModeCoverageContribution {
+	return string(mode) + " > coverage contribution"
+}
+
 const (
 	ProfilingStatMutatorSquashAny  ProfilingMutatorName = prefix + "mutator squashAny"
 	ProfilingStatMutatorSplice     ProfilingMutatorName = prefix + "mutator splice"

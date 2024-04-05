@@ -2,32 +2,39 @@ package fuzzer
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 type ProfilingModeName string
 type ProfilingMutatorName string
 
-const prefix = "[prof] "
+const prefix = "[prof]"
 const (
-	ProfilingStatModeGenerate        ProfilingModeName = prefix + "mode generate"
-	ProfilingStatModeMutate          ProfilingModeName = prefix + "mode mutate"
-	ProfilingStatModeMutateHints     ProfilingModeName = prefix + "mode mutate with hints"
-	ProfilingStatModeSmash           ProfilingModeName = prefix + "mode smash"
-	ProfilingStatModeMutateFromSmash ProfilingModeName = prefix + "mode mutate (from smash)"
+	ProfilingStatModeGenerate        ProfilingModeName = prefix + " mode generate"
+	ProfilingStatModeMutate          ProfilingModeName = prefix + " mode mutate"
+	ProfilingStatModeMutateHints     ProfilingModeName = prefix + " mode mutate with hints"
+	ProfilingStatModeSmash           ProfilingModeName = prefix + " mode smash"
+	ProfilingStatModeMutateFromSmash ProfilingModeName = prefix + " mode mutate (from smash)"
 )
 
-type ProfilingModeCoverageContribution = string
+func ProfilingStatContribution(requesterStat string, coverageIncrease bool) string {
+	op := "increase"
+	if !coverageIncrease {
+		op = "did not change"
+	}
+	return fmt.Sprintf("%s %s > #times cov. %s", prefix, requesterStat, op)
+}
 
-func ProfilingStatContribution(requesterStat string) ProfilingModeCoverageContribution {
-	return prefix + requesterStat + " > cov. contribution"
+func ProfilingAllStatsContribution(coverageIncrease bool) string {
+	return ProfilingStatContribution("ALL requesterStats", coverageIncrease)
 }
 
 const (
-	ProfilingStatMutatorSquashAny  ProfilingMutatorName = prefix + "mutator squashAny"
-	ProfilingStatMutatorSplice     ProfilingMutatorName = prefix + "mutator splice"
-	ProfilingStatMutatorInsertCall ProfilingMutatorName = prefix + "mutator insertCall"
-	ProfilingStatMutatorMutateArg  ProfilingMutatorName = prefix + "mutator mutateArg"
-	ProfilingStatMutatorRemoveCall ProfilingMutatorName = prefix + "mutator removeCall"
+	ProfilingStatMutatorSquashAny  ProfilingMutatorName = prefix + " mutator squashAny"
+	ProfilingStatMutatorSplice     ProfilingMutatorName = prefix + " mutator splice"
+	ProfilingStatMutatorInsertCall ProfilingMutatorName = prefix + " mutator insertCall"
+	ProfilingStatMutatorMutateArg  ProfilingMutatorName = prefix + " mutator mutateArg"
+	ProfilingStatMutatorRemoveCall ProfilingMutatorName = prefix + " mutator removeCall"
 )
 
 // careful, a new slice is generated each time. Don't abuse

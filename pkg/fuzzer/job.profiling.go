@@ -171,7 +171,7 @@ func triageJobPrio(flags ProgTypes) jobPriority {
 
 func (job *triageJob) run(fuzzer *Fuzzer) {
 	if job.requesterStat == "" {
-		fuzzer.Logf(0, "C-ERROR! started a triage job that does not have any requestStat!") // FIXME NICOLAS REMOVE
+		fuzzer.Logf(0, "ERROR! started a triage job that does not have any requestStat!") // FIXME NICOLAS REMOVE
 	}
 	logCallName := "extra"
 	if job.call != -1 {
@@ -211,10 +211,9 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	// At this point, we are certain that the request that started this triage job did indeed
 	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
 	// they don't have a requestExecutionMode assigned => we ignore them
-	fuzzer.Logf(0, "in triageJob.run > after save, for job.requesterStat=%v w/ covChanged=%v", job.requesterStat, covChanged) // FIXME NICOLAS REMOVE
 	fuzzer.mu.Lock()
-	fuzzer.stats[ProfilingStatContribution(job.requesterStat)]++
-	fuzzer.stats[ProfilingStatContribution("ALL requesterStats")]++
+	fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
+	fuzzer.stats[ProfilingAllStatsContribution(covChanged)]++
 	fuzzer.mu.Unlock()
 
 	if fuzzer.Config.NewInputs != nil {

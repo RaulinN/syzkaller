@@ -135,9 +135,9 @@ func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 	// it may result it concurrent modification of req.Prog.
 	if req.NeedSignal && res.Info != nil {
 		for call, info := range res.Info.Calls {
-			fuzzer.triageProgCall(req.Prog, &info, call, req.flags, req.requesterStat)
+			fuzzer.triageProgCall(req.Prog, &info, call, req.flags, req.stat, req.requesterStat)
 		}
-		fuzzer.triageProgCall(req.Prog, &res.Info.Extra, -1, req.flags, req.requesterStat)
+		fuzzer.triageProgCall(req.Prog, &res.Info.Extra, -1, req.flags, req.stat, req.requesterStat)
 	}
 	// Unblock threads that wait for the result.
 	req.result = res
@@ -152,7 +152,7 @@ func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 }
 
 func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *ipc.CallInfo, call int,
-	flags ProgTypes, requesterStat string) {
+	flags ProgTypes, stat string, requesterStat string) {
 	prio := signalPrio(p, info, call)
 	newMaxSignal := fuzzer.Cover.addRawMaxSignal(info.Signal, prio)
 	if newMaxSignal.Empty() {
@@ -172,6 +172,7 @@ func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *ipc.CallInfo, call int,
 		newSignal:     newMaxSignal,
 		flags:         flags,
 		jobPriority:   triageJobPrio(flags),
+		stat:          stat,
 		requesterStat: requesterStat,
 	})
 }

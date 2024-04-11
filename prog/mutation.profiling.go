@@ -8,6 +8,7 @@ package prog
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/google/syzkaller/pkg/fuzzer/ablation_flags"
 	"math"
 	"math/rand"
 	"sort"
@@ -17,6 +18,12 @@ import (
 
 // Maximum length of generated binary blobs inserted into the program.
 const maxBlobLen = uint64(100 << 10)
+
+const anyMutatorEnabled = ablation_flags.ABLATION_MUTATOR_SQUASH_ANY_ENABLED ||
+	ablation_flags.ABLATION_MUTATOR_SPLICE_ENABLED ||
+	ablation_flags.ABLATION_MUTATOR_INSERT_CALL_ENABLED ||
+	ablation_flags.ABLATION_MUTATOR_MUTATE_ARG_ENABLED ||
+	ablation_flags.ABLATION_MUTATOR_REMOVE_CALL_ENABLED
 
 // Mutate program p.
 //
@@ -87,25 +94,45 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 		noMutate: noMutate,
 		corpus:   corpus,
 	}
-	for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
+
+	// if all mutators have been disabled, then we will be stuck forever in the for-loop below
+	// we thus need to execute the loop only if at least one of the mutators is enabled
+	for stop, ok := false, false; !stop && anyMutatorEnabled; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
 		switch {
 		case r.oneOf(5):
-			// Not all calls have anything squashable,
-			// so this has lower priority in reality.
-			observer[MutatorIndexSquashAny]++
-			ok = ctx.squashAny()
+			if ablation_flags.ABLATION_MUTATOR_SQUASH_ANY_ENABLED {
+				// Not all calls have anything squashable,
+				// so this has lower priority in reality.
+				observer[MutatorIndexSquashAny]++
+				ok = ctx.squashAny()
+			}
 		case r.nOutOf(1, 100):
-			observer[MutatorIndexSplice]++
-			ok = ctx.splice()
+			if ablation_flags.ABLATION_MUTATOR_SPLICE_ENABLED {
+				observer[MutatorIndexSplice]++
+				ok = ctx.splice()
+			}
 		case r.nOutOf(20, 31):
-			observer[MutatorIndexInsertCall]++
-			ok = ctx.insertCall()
+			if ablation_flags.ABLATION_MUTATOR_INSERT_CALL_ENABLED {
+				// NOTE: mutateArg mutator also uses p.insertBefore which will not
+				// be disabled even with the ablation flag for insert call mutator set
+				observer[MutatorIndexInsertCall]++
+				ok = ctx.insertCall()
+			}
 		case r.nOutOf(10, 11):
-			observer[MutatorIndexMutateArg]++
-			ok = ctx.mutateArg()
+			if ablation_flags.ABLATION_MUTATOR_MUTATE_ARG_ENABLED {
+				observer[MutatorIndexMutateArg]++
+				ok = ctx.mutateArg()
+			}
 		default:
-			observer[MutatorIndexRemoveCall]++
-			ok = ctx.removeCall()
+			if ablation_flags.ABLATION_MUTATOR_REMOVE_CALL_ENABLED {
+				// NOTE: splice uses p.removeCall (also called by the removeCall, insertCall
+				// and mutateArg mutators) if the resulting program is too long.
+				// I decided not to disable this call even if the tag disable_removecall
+				// is set. I will however not count in the mutator stats
+				observer[MutatorIndexRemoveCall]++
+				ok = ctx.removeCall()
+			}
+
 		}
 	}
 	p.sanitizeFix()

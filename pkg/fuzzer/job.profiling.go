@@ -7,6 +7,7 @@ package fuzzer
 
 import (
 	"fmt"
+	"github.com/google/syzkaller/pkg/fuzzer/ablation_flags"
 	"math/rand"
 	"time"
 
@@ -61,6 +62,18 @@ func (jp *jobPriority) saveID(id int64) {
 	jp.prio = append(jp.prio, id)
 }
 
+func genEmptyProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
+	p := fuzzer.target.Generate(rnd,
+		0,
+		fuzzer.ChoiceTable())
+	return &Request{
+		Prog:          p,
+		NeedSignal:    true,
+		stat:          statGenerate,
+		requesterStat: statGenerate,
+	}
+}
+
 func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeGenerate)
 	start := time.Now()
@@ -106,19 +119,23 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	}
 	newP := p.Clone()
 
-	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
-	start := time.Now()
+	// if the mutate mode is disabled (via ablation), skip the mutation and return
+	// a copy of the original program
+	if ablation_flags.ABLATION_MODE_MUTATE_ENABLED {
+		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
+		start := time.Now()
 
-	obs := newP.MutateWithObserver(rnd,
-		prog.RecommendedCalls,
-		fuzzer.ChoiceTable(),
-		fuzzer.Config.NoMutateCalls,
-		fuzzer.Config.Corpus.Programs(),
-	)
+		obs := newP.MutateWithObserver(rnd,
+			prog.RecommendedCalls,
+			fuzzer.ChoiceTable(),
+			fuzzer.Config.NoMutateCalls,
+			fuzzer.Config.Corpus.Programs(),
+		)
 
-	delta := time.Since(start)
-	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
-	profileMutateObserver(fuzzer, obs)
+		delta := time.Since(start)
+		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
+		profileMutateObserver(fuzzer, obs)
+	}
 
 	return &Request{
 		Prog:          newP,
@@ -359,6 +376,12 @@ type smashJob struct {
 }
 
 func (job *smashJob) run(fuzzer *Fuzzer) {
+	// smashJob simply starts a hintsJob and performs 100 mutations. We can simply omit
+	// these operations and return instantly
+	if !ablation_flags.ABLATION_MODE_SMASH_ENABLED {
+		return
+	}
+
 	fuzzer.Logf(2, "smashing the program %s (call=%d):", job.p, job.call)
 	if fuzzer.Config.Comparisons && job.call >= 0 {
 		fuzzer.startJob(&hintsJob{
@@ -468,6 +491,12 @@ type hintsJob struct {
 }
 
 func (job *hintsJob) run(fuzzer *Fuzzer) {
+	// similarly to smashJob, we can simply omit the mutations if
+	// syzkaller's mutate with hints mode is disabled
+	if !ablation_flags.ABLATION_MODE_HINTS_ENABLED {
+		return
+	}
+
 	// First execute the original program to dump comparisons from KCOV.
 	p := job.p
 	result := fuzzer.exec(job, &Request{

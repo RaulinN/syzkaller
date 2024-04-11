@@ -399,18 +399,21 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
 
-		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
-		startInside := time.Now()
+		// if the mutation mode is disabled, simply use the original program
+		if ablation_flags.ABLATION_MODE_MUTATE_ENABLED {
+			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
+			startInside := time.Now()
 
-		obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
-			fuzzer.ChoiceTable(),
-			fuzzer.Config.NoMutateCalls,
-			fuzzer.Config.Corpus.Programs(),
-		)
+			obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
+				fuzzer.ChoiceTable(),
+				fuzzer.Config.NoMutateCalls,
+				fuzzer.Config.Corpus.Programs(),
+			)
 
-		deltaInside := time.Since(startInside)
-		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
-		profileMutateObserver(fuzzer, obs)
+			deltaInside := time.Since(startInside)
+			fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
+			profileMutateObserver(fuzzer, obs)
+		}
 
 		result := fuzzer.exec(job, &Request{
 			Prog:          p,

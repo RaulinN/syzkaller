@@ -1,4 +1,4 @@
-//go:build profiling && ablation && !disable_mode_mutate
+//go:build profiling && !disable_mode_mutate
 
 package ablation_flags
 

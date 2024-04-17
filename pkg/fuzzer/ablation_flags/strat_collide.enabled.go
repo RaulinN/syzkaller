@@ -1,4 +1,4 @@
-//go:build profiling && ablation && !disable_strat_collide
+//go:build profiling && !disable_strat_collide
 
 package ablation_flags
 

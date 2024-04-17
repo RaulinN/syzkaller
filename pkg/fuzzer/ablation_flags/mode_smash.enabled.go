@@ -1,4 +1,4 @@
-//go:build profiling && ablation && !disable_mode_smash
+//go:build profiling && !disable_mode_smash
 
 package ablation_flags
 

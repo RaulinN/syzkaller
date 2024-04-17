@@ -1,4 +1,4 @@
-//go:build profiling && ablation && !disable_mutator_mutatearg
+//go:build profiling && !disable_mutator_mutatearg
 
 package ablation_flags
 

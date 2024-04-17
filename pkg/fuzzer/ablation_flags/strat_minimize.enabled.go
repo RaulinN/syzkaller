@@ -1,4 +1,4 @@
-//go:build profiling && ablation && !disable_strat_minimize
+//go:build profiling && !disable_strat_minimize
 
 package ablation_flags
 

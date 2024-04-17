@@ -317,6 +317,10 @@ func (job *triageJob) minimize(fuzzer *Fuzzer, newSignal signal.Signal) (stop bo
 	const minimizeAttempts = 3
 	job.p, job.call = prog.Minimize(job.p, job.call, false,
 		func(p1 *prog.Prog, call1 int) bool {
+			if !ablation_flags.ABLATION_STRAT_MINIMIZE_ENABLED {
+				return false
+			}
+
 			if stop {
 				return false
 			}
@@ -424,7 +428,8 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		if result.Stop {
 			return
 		}
-		if fuzzer.Config.Collide {
+
+		if ablation_flags.ABLATION_STRAT_COLLIDE_ENABLED && fuzzer.Config.Collide {
 			result := fuzzer.exec(job, &Request{
 				Prog:          randomCollide(p, rnd),
 				stat:          statCollide,

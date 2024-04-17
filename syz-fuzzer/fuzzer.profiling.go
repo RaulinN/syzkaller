@@ -295,6 +295,20 @@ func main() {
 		go fuzzerTool.sendInputsWorker(fuzzerObj.Config.NewInputs)
 	}
 
+	// load ablation config
+	loadAblationConfig := func() {
+		err := fuzzer.SetupAblationConfig("ablation_configuration.json", &fuzzer.AblationConfig)
+		if err != nil {
+			log.SyzFatalf("failed to read ablation config file: %v", err)
+		}
+	}
+	fuzzer.AblationConfig.Once.Do(loadAblationConfig)
+	configJson, err := fuzzer.ToJson(fuzzer.AblationConfig)
+	if err != nil {
+		log.Logf(0, "failed to display ablation configuration file: %v", err)
+	}
+	fuzzerObj.Logf(0, "read ablation configuration: %v", configJson)
+
 	fuzzerTool.fuzzer.StartProfilingLogger()
 	fuzzerTool.pollLoop()
 }

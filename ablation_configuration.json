@@ -12,7 +12,5 @@
   "disable_stage_minimize": false,
   "reduce_mutator_insert_call": false,
   "reduce_mutator_mutate_arg": false,
-  "reduce_mutator_remove_call": false,
-  "reduce_mutator_splice": false,
-  "reduce_mutator_squash_any": false
+  "reduce_mutator_splice": false
 }

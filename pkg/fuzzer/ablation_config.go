@@ -27,9 +27,7 @@ type AblationConfiguration struct {
 	// flags reduce mutators
 	ReduceMutatorInsertCall bool `json:"reduce_mutator_insert_call"`
 	ReduceMutatorMutateArg  bool `json:"reduce_mutator_mutate_arg"`
-	ReduceMutatorRemoveCall bool `json:"reduce_mutator_remove_call"`
 	ReduceMutatorSplice     bool `json:"reduce_mutator_splice"`
-	ReduceMutatorSquashAny  bool `json:"reduce_mutator_squash_any"`
 }
 
 var (

@@ -158,6 +158,9 @@ func (ctx *mutator) splice() bool {
 		return false
 	}
 	p0 := ctx.corpus[r.Intn(len(ctx.corpus))]
+	if fuzzer.AblationConfig.ReduceMutatorSplice {
+		p0 = ctx.corpus[0]
+	}
 	p0c := p0.Clone()
 	idx := r.Intn(len(p.Calls))
 	p.Calls = append(p.Calls[:idx], append(p0c.Calls, p.Calls[idx:]...)...)
@@ -221,7 +224,13 @@ func (ctx *mutator) insertCall() bool {
 	if len(p.Calls) >= ctx.ncalls {
 		return false
 	}
+
 	idx := r.biasedRand(len(p.Calls)+1, 5)
+	// choose index fully randomly if the reduction is activated
+	if fuzzer.AblationConfig.ReduceMutatorInsertCall {
+		idx = r.Intn(len(p.Calls) + 1)
+	}
+
 	var c *Call
 	if idx < len(p.Calls) {
 		c = p.Calls[idx]
@@ -254,6 +263,10 @@ func (ctx *mutator) mutateArg() bool {
 	}
 
 	idx := chooseCall(p, r)
+	if fuzzer.AblationConfig.ReduceMutatorMutateArg {
+		idx = chooseCallRandomly(p, r)
+	}
+
 	if idx < 0 {
 		return false
 	}
@@ -271,6 +284,9 @@ func (ctx *mutator) mutateArg() bool {
 		}
 		s := analyze(ctx.ct, ctx.corpus, p, c)
 		arg, argCtx := ma.chooseArg(r.Rand)
+		if fuzzer.AblationConfig.ReduceMutatorMutateArg {
+			arg, argCtx = ma.chooseArgRandomly(r.Rand)
+		}
 		calls, ok1 := p.Target.mutateArg(r, s, arg, argCtx, &updateSizes)
 		if !ok1 {
 			ok = false
@@ -293,6 +309,11 @@ func (ctx *mutator) mutateArg() bool {
 		}
 	}
 	return true
+}
+
+// Select a call randomly
+func chooseCallRandomly(p *Prog, r *randGen) int {
+	return r.Intn(len(p.Calls))
 }
 
 // Select a call based on the complexity of the arguments.
@@ -640,6 +661,12 @@ func (ma *mutationArgs) collectArg(arg Arg, ctx *ArgCtx) {
 	}
 	ma.prioSum += prio
 	ma.args = append(ma.args, mutationArg{arg, *ctx, ma.prioSum})
+}
+
+func (ma *mutationArgs) chooseArgRandomly(r *rand.Rand) (Arg, ArgCtx) {
+	idx := r.Intn(len(ma.args))
+	arg := ma.args[idx]
+	return arg.arg, arg.ctx
 }
 
 func (ma *mutationArgs) chooseArg(r *rand.Rand) (Arg, ArgCtx) {

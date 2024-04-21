@@ -8,6 +8,7 @@ package fuzzer
 import (
 	"context"
 	"fmt"
+	"github.com/google/syzkaller/profiler"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -239,7 +240,7 @@ func (fuzzer *Fuzzer) nextInput() *Request {
 
 	// if the generation mode is disabled (via ablation), return an empty
 	// program with 0 syscall instead of a random program
-	if AblationConfig.DisableModeGenerate {
+	if profiler.AblationConfig.DisableModeGenerate {
 		return genEmptyProgRequest(fuzzer, rnd)
 	}
 

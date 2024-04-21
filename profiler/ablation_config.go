@@ -1,4 +1,4 @@
-package fuzzer
+package profiler
 
 import (
 	"encoding/json"

@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/google/syzkaller/profiler"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -297,13 +298,13 @@ func main() {
 
 	// load ablation config
 	loadAblationConfig := func() {
-		err := fuzzer.SetupAblationConfig("ablation_configuration.json", &fuzzer.AblationConfig)
+		err := profiler.SetupAblationConfig("ablation_configuration.json", &profiler.AblationConfig)
 		if err != nil {
 			log.SyzFatalf("failed to read ablation config file: %v", err)
 		}
 	}
-	fuzzer.AblationConfig.Once.Do(loadAblationConfig)
-	configJson, err := fuzzer.ToJson(fuzzer.AblationConfig)
+	profiler.AblationConfig.Once.Do(loadAblationConfig)
+	configJson, err := fuzzer.ToJson(profiler.AblationConfig)
 	if err != nil {
 		log.Logf(0, "failed to display ablation configuration file: %v", err)
 	}

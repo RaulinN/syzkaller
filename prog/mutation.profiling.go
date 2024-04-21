@@ -8,7 +8,7 @@ package prog
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/google/syzkaller/pkg/fuzzer"
+	"github.com/google/syzkaller/profiler"
 	"math"
 	"math/rand"
 	"sort"
@@ -91,34 +91,34 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 
 	// if all mutators have been disabled, then we will be stuck forever in the for-loop below
 	// we thus need to execute the loop only if at least one of the mutators is enabled
-	for stop, ok := false, false; !stop && fuzzer.AblationConfig.AnyMutatorEnabled; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
+	for stop, ok := false, false; !stop && profiler.AblationConfig.AnyMutatorEnabled; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
 		switch {
 		case r.oneOf(5):
-			if !fuzzer.AblationConfig.DisableMutatorSquashAny {
+			if !profiler.AblationConfig.DisableMutatorSquashAny {
 				// Not all calls have anything squashable,
 				// so this has lower priority in reality.
 				observer[MutatorIndexSquashAny]++
 				ok = ctx.squashAny()
 			}
 		case r.nOutOf(1, 100):
-			if !fuzzer.AblationConfig.DisableMutatorSplice {
+			if !profiler.AblationConfig.DisableMutatorSplice {
 				observer[MutatorIndexSplice]++
 				ok = ctx.splice()
 			}
 		case r.nOutOf(20, 31):
-			if !fuzzer.AblationConfig.DisableMutatorInsertCall {
+			if !profiler.AblationConfig.DisableMutatorInsertCall {
 				// NOTE: mutateArg mutator also uses p.insertBefore which will not
 				// be disabled even with the ablation flag for insert call mutator set
 				observer[MutatorIndexInsertCall]++
 				ok = ctx.insertCall()
 			}
 		case r.nOutOf(10, 11):
-			if !fuzzer.AblationConfig.DisableMutatorMutateArg {
+			if !profiler.AblationConfig.DisableMutatorMutateArg {
 				observer[MutatorIndexMutateArg]++
 				ok = ctx.mutateArg()
 			}
 		default:
-			if !fuzzer.AblationConfig.DisableMutatorRemoveCall {
+			if !profiler.AblationConfig.DisableMutatorRemoveCall {
 				// NOTE: splice uses p.removeCall (also called by the removeCall, insertCall
 				// and mutateArg mutators) if the resulting program is too long.
 				// I decided not to disable this call even if the tag disable_removecall
@@ -158,7 +158,7 @@ func (ctx *mutator) splice() bool {
 		return false
 	}
 	p0 := ctx.corpus[r.Intn(len(ctx.corpus))]
-	if fuzzer.AblationConfig.ReduceMutatorSplice {
+	if profiler.AblationConfig.ReduceMutatorSplice {
 		p0 = ctx.corpus[0]
 	}
 	p0c := p0.Clone()
@@ -227,7 +227,7 @@ func (ctx *mutator) insertCall() bool {
 
 	idx := r.biasedRand(len(p.Calls)+1, 5)
 	// choose index fully randomly if the reduction is activated
-	if fuzzer.AblationConfig.ReduceMutatorInsertCall {
+	if profiler.AblationConfig.ReduceMutatorInsertCall {
 		idx = r.Intn(len(p.Calls) + 1)
 	}
 
@@ -263,7 +263,7 @@ func (ctx *mutator) mutateArg() bool {
 	}
 
 	idx := chooseCall(p, r)
-	if fuzzer.AblationConfig.ReduceMutatorMutateArg {
+	if profiler.AblationConfig.ReduceMutatorMutateArg {
 		idx = chooseCallRandomly(p, r)
 	}
 
@@ -284,7 +284,7 @@ func (ctx *mutator) mutateArg() bool {
 		}
 		s := analyze(ctx.ct, ctx.corpus, p, c)
 		arg, argCtx := ma.chooseArg(r.Rand)
-		if fuzzer.AblationConfig.ReduceMutatorMutateArg {
+		if profiler.AblationConfig.ReduceMutatorMutateArg {
 			arg, argCtx = ma.chooseArgRandomly(r.Rand)
 		}
 		calls, ok1 := p.Target.mutateArg(r, s, arg, argCtx, &updateSizes)

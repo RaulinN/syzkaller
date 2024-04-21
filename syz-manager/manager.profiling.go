@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/google/syzkaller/pkg/fuzzer"
 	"io"
 	"math/rand"
 	"net"
@@ -217,7 +218,7 @@ func RunManager(cfg *mgrconfig.Config) {
 
 	go func() {
 		for lastTime := time.Now(); ; {
-			time.Sleep(10 * time.Second)
+			time.Sleep(30 * time.Second)
 			now := time.Now()
 			diff := now.Sub(lastTime)
 			lastTime = now
@@ -227,18 +228,25 @@ func RunManager(cfg *mgrconfig.Config) {
 				continue
 			}
 			mgr.fuzzingTime += diff * time.Duration(atomic.LoadUint32(&mgr.numFuzzing))
-			executed := mgr.stats.execTotal.get()
-			crashes := mgr.stats.crashes.get()
-			corpusCover := mgr.stats.corpusCover.get()
-			corpusSignal := mgr.stats.corpusSignal.get()
-			maxSignal := mgr.stats.maxSignal.get()
+			r := mgr.stats.all()
 			triageQLen := len(mgr.candidates)
+			corpusLen := mgr.corpus.Len()
 			mgr.mu.Unlock()
+
 			numReproducing := atomic.LoadUint32(&mgr.numReproducing)
 			numFuzzing := atomic.LoadUint32(&mgr.numFuzzing)
 
-			log.Logf(0, "VMs %v, executed %v, cover %v, signal %v/%v, crashes %v, repro %v, triageQLen %v",
-				numFuzzing, executed, corpusCover, corpusSignal, maxSignal, crashes, numReproducing, triageQLen)
+			r["num fuzzers"] = uint64(numFuzzing)
+			r["corpus size"] = corpusLen
+			r["triage queue"] = uint64(triageQLen)
+			r["num reproducing"] = uint64(numReproducing)
+
+			statsJson, err := fuzzer.ToJson(r)
+			if err != nil {
+				log.Logf(0, "ERROR encoding stats map to JSON in manager")
+			}
+
+			log.Logf(0, "%v;manager;%v", now.Unix(), statsJson)
 		}
 	}()
 

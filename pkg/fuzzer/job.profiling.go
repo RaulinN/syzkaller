@@ -8,6 +8,7 @@ package fuzzer
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/google/syzkaller/pkg/corpus"
@@ -224,7 +225,7 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 		RawCover: info.rawCover,
 	}
 
-	covIncrease := fuzzer.Config.Corpus.Save(input)
+	newCoverage, covIncrease := fuzzer.Config.Corpus.Save(input)
 	covChanged := covIncrease > 0
 	// At this point, we are certain that the request that started this triage job did indeed
 	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
@@ -244,6 +245,22 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	} else {
 		fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
 		fuzzer.stats[ProfilingStatBasicBlocksCoverage(job.requesterStat)] += covIncrease
+	}
+
+	now := time.Now().Unix()
+	for _, pc := range newCoverage {
+		r := make(map[string]string)
+		r["pc_uint32"] = strconv.FormatUint(uint64(pc), 10)
+		r["pc_uint64_hex_padded"] = fmt.Sprintf("0xffffffff%08x", pc) // same format than /rawcover
+		r["stat"] = job.stat
+		r["requesterStat"] = job.requesterStat
+
+		rJson, err := ToJson(r)
+		if err != nil {
+			fuzzer.Logf(0, "ERROR encoding PC map '%v' to JSON", r)
+		}
+
+		fuzzer.Logf(0, "%v;new PC from merge diff registered;%s", now, rJson)
 	}
 
 	// increase aggregated stats

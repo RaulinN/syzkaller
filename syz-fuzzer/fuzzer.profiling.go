@@ -298,10 +298,13 @@ func main() {
 
 	// load ablation config
 	loadAblationConfig := func() {
-		err := profiler.SetupAblationConfig("ablation_configuration.json", &profiler.AblationConfig)
-		if err != nil {
-			log.SyzFatalf("failed to read ablation config file: %v", err)
-		}
+		// FIXME NICOLAS temporarily disabling ablation config. Tried literally everything on the docker to open the specific file => wouldnt work
+		/*
+			err := profiler.SetupAblationConfig("ablation_configuration.json", &profiler.AblationConfig)
+			if err != nil {
+				log.SyzFatalf("failed to read ablation config file: %v", err)
+			}
+		*/
 	}
 	profiler.AblationConfig.Once.Do(loadAblationConfig)
 	configJson, err := fuzzer.ToJson(profiler.AblationConfig)

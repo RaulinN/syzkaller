@@ -12,6 +12,7 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 		// FIXME NICOLAS I believe this will actually be reset every hour (on executor creation) => make it persistent
 		for {
 			time.Sleep(60 * time.Second)
+			now := time.Now().Unix()
 
 			counts := fuzzer.profilingStats.allCounts()
 			countsJson, err := ToJson(counts)
@@ -29,8 +30,16 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 				fuzzer.Logf(0, "ERROR encoding duration map to JSON")
 			}
 
-			fuzzer.Logf(0, "logging total counts:%v", countsJson)
-			fuzzer.Logf(0, "logging total durations (hh:mm:ss):%v", durationsJson)
+			fuzzer.Logf(0, "%v;logging total counts:%v", now, countsJson)
+			fuzzer.Logf(0, "%v;logging total durations (hh:mm:ss):%v", now, durationsJson)
+
+			// log all fuzzer stats stats
+			stats := fuzzer.GrabAllStats()
+			statsJson, err := ToJson(stats)
+			if err != nil {
+				fuzzer.Logf(0, "ERROR encoding stats map to JSON")
+			}
+			fuzzer.Logf(0, "%v;logging all stats:%v", now, statsJson)
 
 			// TODO display durations on dashboard?
 			fuzzer.mu.Lock()

@@ -107,6 +107,8 @@ func profileMutateObserver(fuzzer *Fuzzer, observer map[prog.MutatorIndex]int) {
 			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorMutateArg, v)
 		case prog.MutatorIndexRemoveCall:
 			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorRemoveCall, v)
+		case prog.MutatorIndexShuffle:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorShuffle, v)
 		default:
 			panic(fmt.Sprintf("mutator index '%v' case switch unknown in profileMutateObserver", k))
 		}

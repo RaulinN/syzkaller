@@ -21,6 +21,7 @@ type AblationConfiguration struct {
 	DisableMutatorRemoveCall bool `json:"disable_mutator_remove_call"`
 	DisableMutatorSplice     bool `json:"disable_mutator_splice"`
 	DisableMutatorSquashAny  bool `json:"disable_mutator_squash_any"`
+	DisableMutatorShuffle    bool `json:"disable_mutator_shuffle"`
 	// flags disable stages
 	DisableStageCollide  bool `json:"disable_stage_collide"`
 	DisableStageMinimize bool `json:"disable_stage_minimize"`

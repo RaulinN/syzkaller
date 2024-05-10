@@ -8,6 +8,7 @@
   "disable_mutator_remove_call": false,
   "disable_mutator_splice": false,
   "disable_mutator_squash_any": false,
+  "disable_mutator_shuffle": false,
   "disable_stage_collide": false,
   "disable_stage_minimize": false,
   "reduce_mutator_insert_call": false,

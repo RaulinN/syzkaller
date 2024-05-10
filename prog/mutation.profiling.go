@@ -48,6 +48,8 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 			ok = ctx.squashAny()
 		case r.nOutOf(1, 100):
 			ok = ctx.splice()
+		case r.nOutOf(1, 100):
+			ok = ctx.shuffle()
 		case r.nOutOf(20, 31):
 			ok = ctx.insertCall()
 		case r.nOutOf(10, 11):
@@ -71,6 +73,7 @@ const (
 	MutatorIndexInsertCall
 	MutatorIndexMutateArg
 	MutatorIndexRemoveCall
+	MutatorIndexShuffle
 )
 
 func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) map[MutatorIndex]int {
@@ -104,6 +107,11 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 			if !profiler.AblationConfig.DisableMutatorSplice {
 				observer[MutatorIndexSplice]++
 				ok = ctx.splice()
+			}
+		case r.nOutOf(1, 100):
+			if !profiler.AblationConfig.DisableMutatorShuffle {
+				observer[MutatorIndexShuffle]++
+				ok = ctx.shuffle()
 			}
 		case r.nOutOf(20, 31):
 			if !profiler.AblationConfig.DisableMutatorInsertCall {
@@ -147,6 +155,32 @@ type mutator struct {
 	ct       *ChoiceTable // ChoiceTable for syscalls.
 	noMutate map[int]bool // Set of IDs of syscalls which should not be mutated.
 	corpus   []*Prog      // The entire corpus, including original program p.
+}
+
+func (ctx *mutator) shuffle() bool {
+	p, r := ctx.p, ctx.r
+	n := len(p.Calls)
+	if n == 0 || n >= ctx.ncalls {
+		return false
+	}
+
+	p0c := p.Clone()
+
+	slice := make([]int, n)
+	for i := 0; i < n; i++ {
+		slice[i] = i
+	}
+	// shuffle the slice
+	for i := range slice {
+		j := r.Intn(i + 1)
+		slice[i], slice[j] = slice[j], slice[i]
+	}
+
+	for i, v := range slice {
+		p.Calls[i] = p0c.Calls[v]
+	}
+
+	return true
 }
 
 // This function selects a random other program p0 out of the corpus, and

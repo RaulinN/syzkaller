@@ -39,6 +39,7 @@ const (
 	ProfilingStatMutatorInsertCall ProfilingMutatorName = prefix + " mutator insertCall"
 	ProfilingStatMutatorMutateArg  ProfilingMutatorName = prefix + " mutator mutateArg"
 	ProfilingStatMutatorRemoveCall ProfilingMutatorName = prefix + " mutator removeCall"
+	ProfilingStatMutatorShuffle    ProfilingMutatorName = prefix + " mutator shuffle"
 )
 
 // careful, a new slice is generated each time. Don't abuse
@@ -60,6 +61,7 @@ func allMutators() []ProfilingMutatorName {
 		ProfilingStatMutatorInsertCall,
 		ProfilingStatMutatorMutateArg,
 		ProfilingStatMutatorRemoveCall,
+		ProfilingStatMutatorShuffle,
 	}
 }
 

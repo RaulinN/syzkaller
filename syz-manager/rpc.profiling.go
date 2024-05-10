@@ -265,6 +265,7 @@ func (serv *RPCServer) Check(a *rpctype.CheckArgs, r *int) error {
 	a.DisabledCalls = nil
 	serv.checkResult = a
 	serv.rotator = prog.MakeRotator(serv.cfg.Target, serv.targetEnabledSyscalls, serv.rnd)
+	log.Logf(0, "end of manager config")
 	return nil
 }
 

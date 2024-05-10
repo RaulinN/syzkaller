@@ -64,6 +64,7 @@ func (jp *jobPriority) saveID(id int64) {
 }
 
 func genEmptyProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
+	fuzzer.Logf(0, "Entering in function genEmptyProgRequest")
 	p := fuzzer.target.Generate(rnd,
 		0,
 		fuzzer.ChoiceTable())
@@ -76,6 +77,7 @@ func genEmptyProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 }
 
 func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
+	fuzzer.Logf(0, "Entering in function genProgRequest")
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeGenerate)
 	start := time.Now()
 

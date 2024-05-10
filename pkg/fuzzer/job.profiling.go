@@ -159,6 +159,7 @@ type triageJob struct {
 	// in case the coverage increase is indeed real, we need to be able to
 	// attribute this contribution to the correct execution mode (coming
 	// from the request that started the triageJob), hence we store it
+	stat          string
 	requesterStat string
 }
 
@@ -213,10 +214,25 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
 	// they don't have a requestExecutionMode assigned => we ignore them
 	fuzzer.mu.Lock()
-	fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
+
+	// increase corresponding dashboard stats
+	if job.stat == statMinimize {
+		// if the job was created by a minimize request, we want to attribute the coverage
+		// uncovered via minimize to the corresponding requester
+
+		nameContrib := fmt.Sprintf("%s (via %s)", ProfilingStatContribution(job.requesterStat, covChanged), statMinimize)
+		nameBlocks := fmt.Sprintf("%s (via %s)", ProfilingStatBasicBlocksCoverage(job.requesterStat), statMinimize)
+
+		fuzzer.stats[nameContrib]++
+		fuzzer.stats[nameBlocks] += covIncrease
+	} else {
+		fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
+		fuzzer.stats[ProfilingStatBasicBlocksCoverage(job.requesterStat)] += covIncrease
+	}
+
+	// increase aggregated stats
 	fuzzer.stats[ProfilingAllStatsContribution(covChanged)]++
 
-	fuzzer.stats[ProfilingStatBasicBlocksCoverage(job.requesterStat)] += covIncrease
 	fuzzer.stats[ProfilingStatBasicBlocksCoverage("TEST ALL STATS")] += covIncrease // FIXME NICOLAS REMOVE
 	fuzzer.mu.Unlock()
 
@@ -292,7 +308,7 @@ func (job *triageJob) minimize(fuzzer *Fuzzer, newSignal signal.Signal) (stop bo
 					Prog:          p1,
 					NeedSignal:    true,
 					stat:          statMinimize,
-					requesterStat: statMinimize,
+					requesterStat: job.requesterStat,
 				})
 				if result.Stop {
 					stop = true

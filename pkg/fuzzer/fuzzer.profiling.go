@@ -219,6 +219,13 @@ func (fuzzer *Fuzzer) NextInput() *Request {
 }
 
 func (fuzzer *Fuzzer) nextInput() *Request {
+	// 0.1% chance that a request actually becomes a new generate request
+	// 0% chance if the flag prob_generate is not set
+	rnd := fuzzer.rand()
+	if rnd.Float64() < PROB_GENERATE_PROC {
+		return genProgRequest(fuzzer, rnd)
+	}
+
 	nextExec := fuzzer.nextExec.tryPop()
 	if nextExec != nil {
 		return nextExec.value
@@ -230,7 +237,7 @@ func (fuzzer *Fuzzer) nextInput() *Request {
 		// more frequently because fallback signal is weak.
 		mutateRate = 0.5
 	}
-	rnd := fuzzer.rand()
+	rnd = fuzzer.rand()
 	if rnd.Float64() < mutateRate {
 		req := mutateProgRequest(fuzzer, rnd)
 		if req != nil {

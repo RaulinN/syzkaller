@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2020 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -51,7 +51,7 @@ func TestMergeDiff(t *testing.T) {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			var cov Cover
 			cov.Merge(test.init)
-			diff := cov.MergeDiff(test.merge)
+			diff, _ := cov.MergeDiff(test.merge)
 			if res := cmp.Diff(test.diff, diff); res != "" {
 				t.Fatalf("MergeDiff result is wrong: %v", res)
 			}

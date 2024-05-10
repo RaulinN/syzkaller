@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2015 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -20,13 +20,13 @@ func (cov *Cover) Merge(raw []uint32) {
 }
 
 // Merge merges raw into coverage and returns newly added PCs. Overwrites/mutates raw.
-func (cov *Cover) MergeDiff(raw []uint32) []uint32 {
+func (cov *Cover) MergeDiff(raw []uint32) ([]uint32, uint64) {
 	c := *cov
 	if c == nil {
 		c = make(Cover)
 		*cov = c
 	}
-	n := 0
+	var n uint64 = 0
 	for _, pc := range raw {
 		if _, ok := c[pc]; ok {
 			continue
@@ -35,7 +35,7 @@ func (cov *Cover) MergeDiff(raw []uint32) []uint32 {
 		raw[n] = pc
 		n++
 	}
-	return raw[:n]
+	return raw[:n], n
 }
 
 func (cov Cover) Serialize() []uint32 {

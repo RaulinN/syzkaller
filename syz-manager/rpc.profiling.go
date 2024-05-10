@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2018 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -309,7 +309,7 @@ func (serv *RPCServer) NewInput(a *rpctype.NewInputArgs, r *int) error {
 	if f != nil && f.rotated {
 		f.rotatedSignal.Merge(inputSignal)
 	}
-	diff := serv.corpusCover.MergeDiff(a.Cover)
+	diff, _ := serv.corpusCover.MergeDiff(a.Cover)
 	serv.stats.corpusCover.set(len(serv.corpusCover))
 	if len(diff) != 0 && serv.coverFilter != nil {
 		// Note: ReportGenerator is already initialized if coverFilter is enabled.

@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2024 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -8,6 +8,7 @@ package fuzzer
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/google/syzkaller/pkg/corpus"
 	"github.com/google/syzkaller/pkg/cover"
@@ -61,13 +62,40 @@ func (jp *jobPriority) saveID(id int64) {
 }
 
 func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeGenerate)
+	start := time.Now()
+
 	p := fuzzer.target.Generate(rnd,
 		prog.RecommendedCalls,
 		fuzzer.ChoiceTable())
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeGenerate, delta)
+
 	return &Request{
-		Prog:       p,
-		NeedSignal: true,
-		stat:       statGenerate,
+		Prog:          p,
+		NeedSignal:    true,
+		stat:          statGenerate,
+		requesterStat: statGenerate,
+	}
+}
+
+func profileMutateObserver(fuzzer *Fuzzer, observer map[prog.MutatorIndex]int) {
+	for k, v := range observer {
+		switch k {
+		case prog.MutatorIndexSquashAny:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorSquashAny, v)
+		case prog.MutatorIndexSplice:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorSplice, v)
+		case prog.MutatorIndexInsertCall:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorInsertCall, v)
+		case prog.MutatorIndexMutateArg:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorMutateArg, v)
+		case prog.MutatorIndexRemoveCall:
+			fuzzer.profilingStats.AddMutatorCounter(ProfilingStatMutatorRemoveCall, v)
+		default:
+			panic(fmt.Sprintf("mutator index '%v' case switch unknown in profileMutateObserver", k))
+		}
 	}
 }
 
@@ -77,16 +105,26 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		return nil
 	}
 	newP := p.Clone()
-	newP.Mutate(rnd,
+
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
+	start := time.Now()
+
+	obs := newP.MutateWithObserver(rnd,
 		prog.RecommendedCalls,
 		fuzzer.ChoiceTable(),
 		fuzzer.Config.NoMutateCalls,
 		fuzzer.Config.Corpus.Programs(),
 	)
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
+	profileMutateObserver(fuzzer, obs)
+
 	return &Request{
-		Prog:       newP,
-		NeedSignal: true,
-		stat:       statFuzz,
+		Prog:          newP,
+		NeedSignal:    true,
+		stat:          statFuzz,
+		requesterStat: statFuzz,
 	}
 }
 
@@ -99,10 +137,11 @@ func candidateRequest(input Candidate) *Request {
 		flags |= progSmashed
 	}
 	return &Request{
-		Prog:       input.Prog,
-		NeedSignal: true,
-		stat:       statCandidate,
-		flags:      flags,
+		Prog:          input.Prog,
+		NeedSignal:    true,
+		stat:          statCandidate,
+		flags:         flags,
+		requesterStat: statCandidate,
 	}
 }
 
@@ -117,6 +156,10 @@ type triageJob struct {
 	newSignal signal.Signal
 	flags     ProgTypes
 	jobPriority
+	// in case the coverage increase is indeed real, we need to be able to
+	// attribute this contribution to the correct execution mode (coming
+	// from the request that started the triageJob), hence we store it
+	requesterStat string
 }
 
 func triageJobPrio(flags ProgTypes) jobPriority {
@@ -127,6 +170,9 @@ func triageJobPrio(flags ProgTypes) jobPriority {
 }
 
 func (job *triageJob) run(fuzzer *Fuzzer) {
+	if job.requesterStat == "" {
+		fuzzer.Logf(0, "ERROR! started a triage job that does not have any requestStat!") // FIXME NICOLAS REMOVE
+	}
 	logCallName := "extra"
 	if job.call != -1 {
 		callName := job.p.Calls[job.call].Meta.Name
@@ -138,6 +184,7 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	if stop || info.newStableSignal.Empty() {
 		return
 	}
+
 	if job.flags&progMinimized == 0 {
 		stop = job.minimize(fuzzer, info.newStableSignal)
 		if stop {
@@ -159,7 +206,20 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 		Cover:    info.cover.Serialize(),
 		RawCover: info.rawCover,
 	}
-	fuzzer.Config.Corpus.Save(input)
+
+	covIncrease := fuzzer.Config.Corpus.Save(input)
+	covChanged := covIncrease > 0
+	// At this point, we are certain that the request that started this triage job did indeed
+	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
+	// they don't have a requestExecutionMode assigned => we ignore them
+	fuzzer.mu.Lock()
+	fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
+	fuzzer.stats[ProfilingAllStatsContribution(covChanged)]++
+
+	fuzzer.stats[ProfilingStatBasicBlocksCoverage(job.requesterStat)] += covIncrease
+	fuzzer.stats[ProfilingStatBasicBlocksCoverage("TEST ALL STATS")] += covIncrease // FIXME NICOLAS REMOVE
+	fuzzer.mu.Unlock()
+
 	if fuzzer.Config.NewInputs != nil {
 		select {
 		case <-fuzzer.ctx.Done():
@@ -180,12 +240,13 @@ func (job *triageJob) deflake(fuzzer *Fuzzer) (info deflakedCover, stop bool) {
 	var notExecuted int
 	for i := 0; i < signalRuns; i++ {
 		result := fuzzer.exec(job, &Request{
-			Prog:         job.p,
-			NeedSignal:   true,
-			NeedCover:    true,
-			NeedRawCover: fuzzer.Config.FetchRawCover,
-			stat:         statTriage,
-			flags:        progInTriage,
+			Prog:          job.p,
+			NeedSignal:    true,
+			NeedCover:     true,
+			NeedRawCover:  fuzzer.Config.FetchRawCover,
+			stat:          statTriage,
+			flags:         progInTriage,
+			requesterStat: job.requesterStat,
 		})
 		if result.Stop {
 			stop = true
@@ -228,9 +289,10 @@ func (job *triageJob) minimize(fuzzer *Fuzzer, newSignal signal.Signal) (stop bo
 			}
 			for i := 0; i < minimizeAttempts; i++ {
 				result := fuzzer.exec(job, &Request{
-					Prog:       p1,
-					NeedSignal: true,
-					stat:       statMinimize,
+					Prog:          p1,
+					NeedSignal:    true,
+					stat:          statMinimize,
+					requesterStat: statMinimize,
 				})
 				if result.Stop {
 					stop = true
@@ -290,26 +352,41 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		})
 	}
 
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeSmash)
+	start := time.Now()
+
 	const iters = 100
 	rnd := fuzzer.rand()
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
-		p.Mutate(rnd, prog.RecommendedCalls,
+
+		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
+		startInside := time.Now()
+
+		obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
 			fuzzer.ChoiceTable(),
 			fuzzer.Config.NoMutateCalls,
-			fuzzer.Config.Corpus.Programs())
+			fuzzer.Config.Corpus.Programs(),
+		)
+
+		deltaInside := time.Since(startInside)
+		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
+		profileMutateObserver(fuzzer, obs)
+
 		result := fuzzer.exec(job, &Request{
-			Prog:       p,
-			NeedSignal: true,
-			stat:       statSmash,
+			Prog:          p,
+			NeedSignal:    true,
+			stat:          statSmash, // FIXME NICOLAS RECURSION
+			requesterStat: statFuzzFromSmash,
 		})
 		if result.Stop {
 			return
 		}
 		if fuzzer.Config.Collide {
 			result := fuzzer.exec(job, &Request{
-				Prog: randomCollide(p, rnd),
-				stat: statCollide,
+				Prog:          randomCollide(p, rnd),
+				stat:          statCollide,
+				requesterStat: statCollide,
 			})
 			if result.Stop {
 				return
@@ -319,6 +396,9 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	if fuzzer.Config.FaultInjection && job.call >= 0 {
 		job.faultInjection(fuzzer)
 	}
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeSmash, delta)
 }
 
 func randomCollide(origP *prog.Prog, rnd *rand.Rand) *prog.Prog {
@@ -350,8 +430,9 @@ func (job *smashJob) faultInjection(fuzzer *Fuzzer) {
 		newProg := job.p.Clone()
 		newProg.Calls[job.call].Props.FailNth = nth
 		result := fuzzer.exec(job, &Request{
-			Prog: job.p,
-			stat: statSmash,
+			Prog:          job.p,
+			stat:          statSmash,
+			requesterStat: statSmash, // FIXME NICOLAS maybe distinguish this cacse?
 		})
 		if result.Stop {
 			return
@@ -374,9 +455,10 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 	// First execute the original program to dump comparisons from KCOV.
 	p := job.p
 	result := fuzzer.exec(job, &Request{
-		Prog:      p,
-		NeedHints: true,
-		stat:      statSeed,
+		Prog:          p,
+		NeedHints:     true,
+		stat:          statSeed,
+		requesterStat: statSeedFromHint,
 	})
 	if result.Stop || result.Info == nil {
 		return
@@ -384,13 +466,23 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 	// Then mutate the initial program for every match between
 	// a syscall argument and a comparison operand.
 	// Execute each of such mutants to check if it gives new coverage.
-	p.MutateWithHints(job.call, result.Info.Calls[job.call].Comps,
+	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateHints)
+	start := time.Now()
+
+	p.MutateWithHints(
+		job.call,
+		result.Info.Calls[job.call].Comps,
 		func(p *prog.Prog) bool {
 			result := fuzzer.exec(job, &Request{
-				Prog:       p,
-				NeedSignal: true,
-				stat:       statHint,
+				Prog:          p,
+				NeedSignal:    true,
+				stat:          statHint, // FIXME NICOLAS RECURSION
+				requesterStat: statHint,
 			})
 			return !result.Stop
-		})
+		},
+	)
+
+	delta := time.Since(start)
+	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateHints, delta)
 }

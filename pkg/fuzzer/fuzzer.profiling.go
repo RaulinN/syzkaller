@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2024 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -24,6 +24,7 @@ type Fuzzer struct {
 	Config         *Config
 	Cover          *Cover
 	NeedCandidates chan struct{}
+	profilingStats *ProfilingStats
 
 	ctx    context.Context
 	mu     sync.Mutex
@@ -54,6 +55,7 @@ func NewFuzzer(ctx context.Context, cfg *Config, rnd *rand.Rand,
 		Config:         cfg,
 		Cover:          &Cover{},
 		NeedCandidates: make(chan struct{}, 1),
+		profilingStats: NewProfilingStats(),
 
 		ctx:    ctx,
 		stats:  map[string]uint64{},
@@ -105,6 +107,21 @@ type Request struct {
 	stat    string
 	result  *Result
 	resultC chan *Result
+	/*
+	 * As we iterate through a program, we fetch the next input (via `NextInput` below) at
+	 * each loop iteration. This input can take different forms:
+	 * - It may be a combination of a job (encodes the jobPriority) and a request that has been
+	 *   placed in the next input queue using the "fuzzer.exec(job, request)" function.
+	 * - If the "next input queue" (fuzzer.nextExec in the code) mentioned above is empty, we
+	 *   then generate either a "program generation request" or a "program mutation request."
+	 * - Alternatively, it could consist of a group of candidates retrieved from the manager.
+	 *   These candidates essentially represent programs and contain additional information,
+	 *   such as whether they have been minimized or affected by smash detection.
+	 * We want to keep track of what mode created a certain request to be able to check whether
+	 * or not a certain mode is better than another at increasing coverage
+	 */
+	// FIXME NICOLAS check third bullet point
+	requesterStat string
 }
 
 type Result struct {
@@ -118,9 +135,9 @@ func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 	// it may result it concurrent modification of req.Prog.
 	if req.NeedSignal && res.Info != nil {
 		for call, info := range res.Info.Calls {
-			fuzzer.triageProgCall(req.Prog, &info, call, req.flags)
+			fuzzer.triageProgCall(req.Prog, &info, call, req.flags, req.requesterStat)
 		}
-		fuzzer.triageProgCall(req.Prog, &res.Info.Extra, -1, req.flags)
+		fuzzer.triageProgCall(req.Prog, &res.Info.Extra, -1, req.flags, req.requesterStat)
 	}
 	// Unblock threads that wait for the result.
 	req.result = res
@@ -135,7 +152,7 @@ func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 }
 
 func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *ipc.CallInfo, call int,
-	flags ProgTypes) {
+	flags ProgTypes, requesterStat string) {
 	prio := signalPrio(p, info, call)
 	newMaxSignal := fuzzer.Cover.addRawMaxSignal(info.Signal, prio)
 	if newMaxSignal.Empty() {
@@ -149,12 +166,13 @@ func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *ipc.CallInfo, call int,
 	}
 	fuzzer.Logf(2, "found new signal in call %d in %s", call, p)
 	fuzzer.startJob(&triageJob{
-		p:           p.Clone(),
-		call:        call,
-		info:        *info,
-		newSignal:   newMaxSignal,
-		flags:       flags,
-		jobPriority: triageJobPrio(flags),
+		p:             p.Clone(),
+		call:          call,
+		info:          *info,
+		newSignal:     newMaxSignal,
+		flags:         flags,
+		jobPriority:   triageJobPrio(flags),
+		requesterStat: requesterStat,
 	})
 }
 

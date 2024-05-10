@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2015 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -60,6 +60,61 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 	if got := len(p.Calls); got < 1 || got > ncalls {
 		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
 	}
+}
+
+type MutatorIndex int
+
+const (
+	MutatorIndexSquashAny MutatorIndex = iota
+	MutatorIndexSplice
+	MutatorIndexInsertCall
+	MutatorIndexMutateArg
+	MutatorIndexRemoveCall
+)
+
+func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) map[MutatorIndex]int {
+	observer := map[MutatorIndex]int{} // count utilization of mutators
+
+	r := newRand(p.Target, rs)
+	if ncalls < len(p.Calls) {
+		ncalls = len(p.Calls)
+	}
+	ctx := &mutator{
+		p:        p,
+		r:        r,
+		ncalls:   ncalls,
+		ct:       ct,
+		noMutate: noMutate,
+		corpus:   corpus,
+	}
+	for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
+		switch {
+		case r.oneOf(5):
+			// Not all calls have anything squashable,
+			// so this has lower priority in reality.
+			observer[MutatorIndexSquashAny]++
+			ok = ctx.squashAny()
+		case r.nOutOf(1, 100):
+			observer[MutatorIndexSplice]++
+			ok = ctx.splice()
+		case r.nOutOf(20, 31):
+			observer[MutatorIndexInsertCall]++
+			ok = ctx.insertCall()
+		case r.nOutOf(10, 11):
+			observer[MutatorIndexMutateArg]++
+			ok = ctx.mutateArg()
+		default:
+			observer[MutatorIndexRemoveCall]++
+			ok = ctx.removeCall()
+		}
+	}
+	p.sanitizeFix()
+	p.debugValidate()
+	if got := len(p.Calls); got < 1 || got > ncalls {
+		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
+	}
+
+	return observer
 }
 
 // Internal state required for performing mutations -- currently this matches

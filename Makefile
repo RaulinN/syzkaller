@@ -26,6 +26,7 @@ define newline
 endef
 
 RED := $(shell tput setaf 1)
+GREEN := $(shell tput setaf 2)
 RESET := $(shell tput sgr0)
 ifndef SYZ_ENV
 $(warning $(RED)run command via tools/syz-env for best compatibility, see:$(RESET))
@@ -61,7 +62,12 @@ TARGETGOARCH := $(TARGETVMARCH)
 export GO111MODULE=on
 export GOBIN=$(shell pwd -P)/bin
 
-GITREV=$(shell git rev-parse HEAD)
+# PROFILING CHANGES: GITREV is the hash of the last commit on the repo. Since I forked the repo, my commits
+# are obviously not on the main syzkaller repo. They are using stuff from the main repo in the makefile
+# selecting a particular commit hash. I simply hardcoded the last commit before I forked the repo
+# GITREV=$(shell git rev-parse HEAD)
+GITREV="a485f2390d41decb9fca41e15902295e293464d2"
+
 ifeq ("$(shell git diff --shortstat)", "")
 	REV=$(GITREV)
 else
@@ -77,6 +83,9 @@ GOFLAGS := "-ldflags=-s -w -X github.com/google/syzkaller/prog.GitRevision=$(REV
 
 GOHOSTFLAGS ?= $(GOFLAGS)
 GOTARGETFLAGS ?= $(GOFLAGS)
+
+$(warning $(GREEN)build tags used for compilation: $(GOTAGS)$(RESET))
+
 ifneq ("$(GOTAGS)", "")
 	GOHOSTFLAGS += "-tags=$(GOTAGS)"
 endif

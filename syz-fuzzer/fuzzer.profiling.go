@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2015 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -294,6 +294,8 @@ func main() {
 	for i := 0; i < *flagProcs*2; i++ {
 		go fuzzerTool.sendInputsWorker(fuzzerObj.Config.NewInputs)
 	}
+
+	fuzzerTool.fuzzer.StartProfilingLogger()
 	fuzzerTool.pollLoop()
 }
 

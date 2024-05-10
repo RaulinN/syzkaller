@@ -24,3 +24,6 @@ executor/syscalls.h
 
 # vscode
 .vscode
+
+# Mac ds store
+.DS_Store

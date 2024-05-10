@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2024 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -17,6 +17,8 @@ const (
 	statCollide        = "exec collide"
 	statExecTotal      = "exec total"
 	statBufferTooSmall = "buffer too small"
+	statFuzzFromSmash  = "exec fuzz (from smash)"
+	statSeedFromHint   = "exec seeds (from hint)"
 )
 
 func (fuzzer *Fuzzer) GrabStats() map[string]uint64 {

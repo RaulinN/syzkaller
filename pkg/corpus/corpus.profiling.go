@@ -1,4 +1,4 @@
-//go:build !profiling
+//go:build profiling
 
 // Copyright 2024 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -110,7 +110,8 @@ type NewItemEvent struct {
 	NewCover []uint32
 }
 
-func (corpus *Corpus) Save(inp NewInput) {
+// returns by how much the coverage was increased
+func (corpus *Corpus) Save(inp NewInput) uint64 {
 	progData := inp.Prog.Serialize()
 	sig := hash.String(progData)
 
@@ -158,7 +159,7 @@ func (corpus *Corpus) Save(inp NewInput) {
 		corpus.saveProgram(inp.Prog, inp.Signal)
 	}
 	corpus.signal.Merge(inp.Signal)
-	newCover := corpus.cover.MergeDiff(inp.Cover)
+	newCover, covIncrease := corpus.cover.MergeDiff(inp.Cover)
 	if corpus.updates != nil {
 		select {
 		case <-corpus.ctx.Done():
@@ -170,6 +171,8 @@ func (corpus *Corpus) Save(inp NewInput) {
 		}:
 		}
 	}
+
+	return covIncrease
 }
 
 func (corpus *Corpus) DiffSignal(s signal.Signal) signal.Signal {

@@ -8,6 +8,7 @@ package fuzzer
 import (
 	"context"
 	"fmt"
+	"github.com/google/syzkaller/pkg/fuzzer/ablation_flags"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -236,6 +237,13 @@ func (fuzzer *Fuzzer) nextInput() *Request {
 			return req
 		}
 	}
+
+	// if the generation mode is disabled (via ablation), return an empty
+	// program with 0 syscall instead of a random program
+	if !ablation_flags.ABLATION_MODE_GENERATE_ENABLED {
+		return genEmptyProgRequest(fuzzer, rnd)
+	}
+
 	return genProgRequest(fuzzer, rnd)
 }
 

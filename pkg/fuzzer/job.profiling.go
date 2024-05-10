@@ -7,7 +7,7 @@ package fuzzer
 
 import (
 	"fmt"
-	"github.com/google/syzkaller/pkg/fuzzer/ablation_flags"
+	"github.com/google/syzkaller/profiler"
 	"math/rand"
 	"time"
 
@@ -121,7 +121,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 
 	// if the mutate mode is disabled (via ablation), skip the mutation and return
 	// a copy of the original program
-	if ablation_flags.ABLATION_MODE_MUTATE_ENABLED {
+	if !profiler.AblationConfig.DisableModeMutate {
 		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
 		start := time.Now()
 
@@ -317,6 +317,10 @@ func (job *triageJob) minimize(fuzzer *Fuzzer, newSignal signal.Signal) (stop bo
 	const minimizeAttempts = 3
 	job.p, job.call = prog.Minimize(job.p, job.call, false,
 		func(p1 *prog.Prog, call1 int) bool {
+			if profiler.AblationConfig.DisableStageMinimize {
+				return false
+			}
+
 			if stop {
 				return false
 			}
@@ -378,7 +382,7 @@ type smashJob struct {
 func (job *smashJob) run(fuzzer *Fuzzer) {
 	// smashJob simply starts a hintsJob and performs 100 mutations. We can simply omit
 	// these operations and return instantly
-	if !ablation_flags.ABLATION_MODE_SMASH_ENABLED {
+	if profiler.AblationConfig.DisableModeSmash {
 		return
 	}
 
@@ -400,7 +404,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		p := job.p.Clone()
 
 		// if the mutation mode is disabled, simply use the original program
-		if ablation_flags.ABLATION_MODE_MUTATE_ENABLED {
+		if !profiler.AblationConfig.DisableModeMutate {
 			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
 			startInside := time.Now()
 
@@ -424,7 +428,8 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		if result.Stop {
 			return
 		}
-		if fuzzer.Config.Collide {
+
+		if !profiler.AblationConfig.DisableStageCollide && fuzzer.Config.Collide {
 			result := fuzzer.exec(job, &Request{
 				Prog:          randomCollide(p, rnd),
 				stat:          statCollide,
@@ -496,7 +501,7 @@ type hintsJob struct {
 func (job *hintsJob) run(fuzzer *Fuzzer) {
 	// similarly to smashJob, we can simply omit the mutations if
 	// syzkaller's mutate with hints mode is disabled
-	if !ablation_flags.ABLATION_MODE_HINTS_ENABLED {
+	if profiler.AblationConfig.DisableModeHints {
 		return
 	}
 

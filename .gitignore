@@ -27,3 +27,5 @@ executor/syscalls.h
 
 # Mac ds store
 .DS_Store
+
+count.py

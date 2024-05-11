@@ -113,6 +113,16 @@ func profileMutateObserver(fuzzer *Fuzzer, observer map[prog.MutatorIndex]int) {
 	}
 }
 
+func profileSquashAnalysis(fuzzer *Fuzzer, analysis prog.MutatorAnalysis) {
+	fuzzer.mu.Lock()
+	defer fuzzer.mu.Unlock()
+
+	fuzzer.stats["[prof] analysis : squashAny > #successes"] += analysis.NSuccess
+	fuzzer.stats["[prof] analysis : squashAny > #fails"] += analysis.NFails
+	fuzzer.stats["[prof] analysis : squashAny > time spent (successes)"] += uint64(analysis.TimeSuccess.Nanoseconds())
+	fuzzer.stats["[prof] analysis : squashAny > time spent (fails)"] += uint64(analysis.TimeFails.Nanoseconds())
+}
+
 func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	p := fuzzer.Config.Corpus.ChooseProgram(rnd)
 	if p == nil {
@@ -126,7 +136,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
 		start := time.Now()
 
-		obs := newP.MutateWithObserver(rnd,
+		obs, sqAn := newP.MutateWithObserver(rnd,
 			prog.RecommendedCalls,
 			fuzzer.ChoiceTable(),
 			fuzzer.Config.NoMutateCalls,
@@ -136,6 +146,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		delta := time.Since(start)
 		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
 		profileMutateObserver(fuzzer, obs)
+		profileSquashAnalysis(fuzzer, sqAn)
 	}
 
 	return &Request{
@@ -425,7 +436,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
 			startInside := time.Now()
 
-			obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
+			obs, sqAn := p.MutateWithObserver(rnd, prog.RecommendedCalls,
 				fuzzer.ChoiceTable(),
 				fuzzer.Config.NoMutateCalls,
 				fuzzer.Config.Corpus.Programs(),
@@ -434,6 +445,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 			deltaInside := time.Since(startInside)
 			fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
 			profileMutateObserver(fuzzer, obs)
+			profileSquashAnalysis(fuzzer, sqAn)
 		}
 
 		result := fuzzer.exec(job, &Request{

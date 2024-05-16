@@ -7,7 +7,9 @@ package fuzzer
 
 import (
 	"fmt"
+	"github.com/google/syzkaller/profiler"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/google/syzkaller/pkg/corpus"
@@ -61,6 +63,18 @@ func (jp *jobPriority) saveID(id int64) {
 	jp.prio = append(jp.prio, id)
 }
 
+func genEmptyProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
+	p := fuzzer.target.Generate(rnd,
+		0,
+		fuzzer.ChoiceTable())
+	return &Request{
+		Prog:          p,
+		NeedSignal:    true,
+		stat:          statGenerate,
+		requesterStat: statGenerate,
+	}
+}
+
 func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeGenerate)
 	start := time.Now()
@@ -99,6 +113,16 @@ func profileMutateObserver(fuzzer *Fuzzer, observer map[prog.MutatorIndex]int) {
 	}
 }
 
+func profileSquashAnalysis(fuzzer *Fuzzer, analysis prog.MutatorAnalysis) {
+	fuzzer.mu.Lock()
+	defer fuzzer.mu.Unlock()
+
+	fuzzer.stats["[prof] analysis : squashAny > #successes"] += analysis.NSuccess
+	fuzzer.stats["[prof] analysis : squashAny > #fails"] += analysis.NFails
+	fuzzer.stats["[prof] analysis : squashAny > time spent (successes)"] += uint64(analysis.TimeSuccess.Nanoseconds())
+	fuzzer.stats["[prof] analysis : squashAny > time spent (fails)"] += uint64(analysis.TimeFails.Nanoseconds())
+}
+
 func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	p := fuzzer.Config.Corpus.ChooseProgram(rnd)
 	if p == nil {
@@ -106,19 +130,24 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 	}
 	newP := p.Clone()
 
-	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
-	start := time.Now()
+	// if the mutate mode is disabled (via ablation), skip the mutation and return
+	// a copy of the original program
+	if !profiler.AblationConfig.DisableModeMutate {
+		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
+		start := time.Now()
 
-	obs := newP.MutateWithObserver(rnd,
-		prog.RecommendedCalls,
-		fuzzer.ChoiceTable(),
-		fuzzer.Config.NoMutateCalls,
-		fuzzer.Config.Corpus.Programs(),
-	)
+		obs, sqAn := newP.MutateWithObserver(rnd,
+			prog.RecommendedCalls,
+			fuzzer.ChoiceTable(),
+			fuzzer.Config.NoMutateCalls,
+			fuzzer.Config.Corpus.Programs(),
+		)
 
-	delta := time.Since(start)
-	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
-	profileMutateObserver(fuzzer, obs)
+		delta := time.Since(start)
+		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
+		profileMutateObserver(fuzzer, obs)
+		profileSquashAnalysis(fuzzer, sqAn)
+	}
 
 	return &Request{
 		Prog:          newP,
@@ -208,7 +237,7 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 		RawCover: info.rawCover,
 	}
 
-	covIncrease := fuzzer.Config.Corpus.Save(input)
+	newCoverage, covIncrease := fuzzer.Config.Corpus.Save(input)
 	covChanged := covIncrease > 0
 	// At this point, we are certain that the request that started this triage job did indeed
 	// increase the coverage. Some triage jobs come from other sources (e.g. seed or candidate,
@@ -228,6 +257,22 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	} else {
 		fuzzer.stats[ProfilingStatContribution(job.requesterStat, covChanged)]++
 		fuzzer.stats[ProfilingStatBasicBlocksCoverage(job.requesterStat)] += covIncrease
+	}
+
+	now := time.Now().Unix()
+	for _, pc := range newCoverage {
+		r := make(map[string]string)
+		r["pc_uint32"] = strconv.FormatUint(uint64(pc), 10)
+		r["pc_uint64_hex_padded"] = fmt.Sprintf("0xffffffff%08x", pc) // same format than /rawcover
+		r["stat"] = job.stat
+		r["requesterStat"] = job.requesterStat
+
+		rJson, err := ToJson(r)
+		if err != nil {
+			fuzzer.Logf(0, "ERROR encoding PC map '%v' to JSON", r)
+		}
+
+		fuzzer.Logf(0, "%v;new PC from merge diff registered;%s", now, rJson)
 	}
 
 	// increase aggregated stats
@@ -300,6 +345,10 @@ func (job *triageJob) minimize(fuzzer *Fuzzer, newSignal signal.Signal) (stop bo
 	const minimizeAttempts = 3
 	job.p, job.call = prog.Minimize(job.p, job.call, false,
 		func(p1 *prog.Prog, call1 int) bool {
+			if profiler.AblationConfig.DisableStageMinimize {
+				return false
+			}
+
 			if stop {
 				return false
 			}
@@ -358,13 +407,35 @@ type smashJob struct {
 	jobPriority
 }
 
+type SmashAnalysis struct {
+	NFaultInjection        uint64
+	NHintsJobStart         uint64
+	DurationFullSmash      time.Duration
+	DurationFaultInjection time.Duration
+}
+
 func (job *smashJob) run(fuzzer *Fuzzer) {
+	// smashJob simply starts a hintsJob and performs 100 mutations. We can simply omit
+	// these operations and return instantly
+	if profiler.AblationConfig.DisableModeSmash {
+		return
+	}
+
+	smashAnalysis := SmashAnalysis{
+		NFaultInjection:        0,
+		NHintsJobStart:         0,
+		DurationFullSmash:      time.Duration(0),
+		DurationFaultInjection: time.Duration(0),
+	}
+
 	fuzzer.Logf(2, "smashing the program %s (call=%d):", job.p, job.call)
 	if fuzzer.Config.Comparisons && job.call >= 0 {
+		smashAnalysis.NHintsJobStart += 1
 		fuzzer.startJob(&hintsJob{
 			p:           job.p.Clone(),
 			call:        job.call,
 			jobPriority: newJobPriority(smashPrio),
+			fromSmash:   true,
 		})
 	}
 
@@ -376,18 +447,22 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
 
-		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
-		startInside := time.Now()
+		// if the mutation mode is disabled, simply use the original program
+		if !profiler.AblationConfig.DisableModeMutate {
+			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
+			startInside := time.Now()
 
-		obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
-			fuzzer.ChoiceTable(),
-			fuzzer.Config.NoMutateCalls,
-			fuzzer.Config.Corpus.Programs(),
-		)
+			obs, sqAn := p.MutateWithObserver(rnd, prog.RecommendedCalls,
+				fuzzer.ChoiceTable(),
+				fuzzer.Config.NoMutateCalls,
+				fuzzer.Config.Corpus.Programs(),
+			)
 
-		deltaInside := time.Since(startInside)
-		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
-		profileMutateObserver(fuzzer, obs)
+			deltaInside := time.Since(startInside)
+			fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
+			profileMutateObserver(fuzzer, obs)
+			profileSquashAnalysis(fuzzer, sqAn)
+		}
 
 		result := fuzzer.exec(job, &Request{
 			Prog:          p,
@@ -398,7 +473,8 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		if result.Stop {
 			return
 		}
-		if fuzzer.Config.Collide {
+
+		if !profiler.AblationConfig.DisableStageCollide && fuzzer.Config.Collide {
 			result := fuzzer.exec(job, &Request{
 				Prog:          randomCollide(p, rnd),
 				stat:          statCollide,
@@ -410,11 +486,24 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		}
 	}
 	if fuzzer.Config.FaultInjection && job.call >= 0 {
-		job.faultInjection(fuzzer)
+		t := time.Now()
+		count := job.faultInjection(fuzzer)
+
+		smashAnalysis.DurationFaultInjection += time.Since(t)
+		smashAnalysis.NFaultInjection += count
 	}
 
 	delta := time.Since(start)
 	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeSmash, delta)
+	smashAnalysis.DurationFullSmash += delta
+
+	fuzzer.mu.Lock()
+	defer fuzzer.mu.Unlock()
+
+	fuzzer.stats["[prof] analysis : smash > #hintsJobs started"] += smashAnalysis.NHintsJobStart
+	fuzzer.stats["[prof] analysis : smash > #fault Injections"] += smashAnalysis.NFaultInjection
+	fuzzer.stats["[prof] analysis : smash > time spent (fault injection)"] += uint64(smashAnalysis.DurationFaultInjection.Nanoseconds())
+	fuzzer.stats["[prof] analysis : smash > time spent (full smash)"] += uint64(smashAnalysis.DurationFullSmash.Nanoseconds())
 }
 
 func randomCollide(origP *prog.Prog, rnd *rand.Rand) *prog.Prog {
@@ -439,7 +528,8 @@ func randomCollide(origP *prog.Prog, rnd *rand.Rand) *prog.Prog {
 	return p
 }
 
-func (job *smashJob) faultInjection(fuzzer *Fuzzer) {
+func (job *smashJob) faultInjection(fuzzer *Fuzzer) uint64 {
+	var count uint64 = 0
 	for nth := 1; nth <= 100; nth++ {
 		fuzzer.Logf(2, "injecting fault into call %v, step %v",
 			job.call, nth)
@@ -448,10 +538,11 @@ func (job *smashJob) faultInjection(fuzzer *Fuzzer) {
 		result := fuzzer.exec(job, &Request{
 			Prog:          job.p,
 			stat:          statSmash,
-			requesterStat: statSmash, // FIXME NICOLAS maybe distinguish this cacse?
+			requesterStat: statSmash, // FIXME NICOLAS maybe distinguish this case?
 		})
+		count += 1
 		if result.Stop {
-			return
+			return count
 		}
 		info := result.Info
 		if info != nil && len(info.Calls) > job.call &&
@@ -459,17 +550,27 @@ func (job *smashJob) faultInjection(fuzzer *Fuzzer) {
 			break
 		}
 	}
+
+	return count
 }
 
 type hintsJob struct {
 	p    *prog.Prog
 	call int
 	jobPriority
+	fromSmash bool
 }
 
 func (job *hintsJob) run(fuzzer *Fuzzer) {
+	// similarly to smashJob, we can simply omit the mutations if
+	// syzkaller's mutate with hints mode is disabled
+	if profiler.AblationConfig.DisableModeHints {
+		return
+	}
+
 	// First execute the original program to dump comparisons from KCOV.
 	p := job.p
+	t := time.Now()
 	result := fuzzer.exec(job, &Request{
 		Prog:          p,
 		NeedHints:     true,
@@ -501,4 +602,11 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 
 	delta := time.Since(start)
 	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateHints, delta)
+
+	if job.fromSmash {
+		fuzzer.mu.Lock()
+		defer fuzzer.mu.Unlock()
+
+		fuzzer.stats["[prof] analysis : smash > time spent (hintsJob)"] += uint64(time.Since(t).Nanoseconds())
+	}
 }

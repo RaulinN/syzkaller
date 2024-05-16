@@ -8,9 +8,11 @@ package prog
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/google/syzkaller/profiler"
 	"math"
 	"math/rand"
 	"sort"
+	"time"
 
 	"github.com/google/syzkaller/pkg/image"
 )
@@ -72,8 +74,19 @@ const (
 	MutatorIndexRemoveCall
 )
 
-func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) map[MutatorIndex]int {
+type MutatorAnalysis struct {
+	NFails      uint64
+	NSuccess    uint64
+	TimeFails   time.Duration
+	TimeSuccess time.Duration
+}
+
+func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) (map[MutatorIndex]int, MutatorAnalysis) {
 	observer := map[MutatorIndex]int{} // count utilization of mutators
+	squashAnalysis := MutatorAnalysis{
+		NFails: 0, NSuccess: 0,
+		TimeFails: time.Duration(0), TimeSuccess: time.Duration(0),
+	}
 
 	r := newRand(p.Target, rs)
 	if ncalls < len(p.Calls) {
@@ -87,25 +100,58 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 		noMutate: noMutate,
 		corpus:   corpus,
 	}
-	for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
+
+	// if all mutators have been disabled, then we will be stuck forever in the for-loop below
+	// we thus need to execute the loop only if at least one of the mutators is enabled
+	for stop, ok := false, false; !stop && profiler.AblationConfig.AnyMutatorEnabled; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
 		switch {
 		case r.oneOf(5):
-			// Not all calls have anything squashable,
-			// so this has lower priority in reality.
-			observer[MutatorIndexSquashAny]++
-			ok = ctx.squashAny()
+			if !profiler.AblationConfig.DisableMutatorSquashAny {
+				// Not all calls have anything squashable,
+				// so this has lower priority in reality.
+				observer[MutatorIndexSquashAny]++
+
+				start := time.Now()
+				ok = ctx.squashAny()
+				delta := time.Since(start)
+
+				if ok {
+					// the mutator succeeded
+					squashAnalysis.NSuccess += 1
+					squashAnalysis.TimeSuccess += delta
+				} else {
+					// the mutator did nothing
+					squashAnalysis.NFails += 1
+					squashAnalysis.TimeFails += delta
+				}
+			}
 		case r.nOutOf(1, 100):
-			observer[MutatorIndexSplice]++
-			ok = ctx.splice()
+			if !profiler.AblationConfig.DisableMutatorSplice {
+				observer[MutatorIndexSplice]++
+				ok = ctx.splice()
+			}
 		case r.nOutOf(20, 31):
-			observer[MutatorIndexInsertCall]++
-			ok = ctx.insertCall()
+			if !profiler.AblationConfig.DisableMutatorInsertCall {
+				// NOTE: mutateArg mutator also uses p.insertBefore which will not
+				// be disabled even with the ablation flag for insert call mutator set
+				observer[MutatorIndexInsertCall]++
+				ok = ctx.insertCall()
+			}
 		case r.nOutOf(10, 11):
-			observer[MutatorIndexMutateArg]++
-			ok = ctx.mutateArg()
+			if !profiler.AblationConfig.DisableMutatorMutateArg {
+				observer[MutatorIndexMutateArg]++
+				ok = ctx.mutateArg()
+			}
 		default:
-			observer[MutatorIndexRemoveCall]++
-			ok = ctx.removeCall()
+			if !profiler.AblationConfig.DisableMutatorRemoveCall {
+				// NOTE: splice uses p.removeCall (also called by the removeCall, insertCall
+				// and mutateArg mutators) if the resulting program is too long.
+				// I decided not to disable this call even if the tag disable_removecall
+				// is set. I will however not count in the mutator stats
+				observer[MutatorIndexRemoveCall]++
+				ok = ctx.removeCall()
+			}
+
 		}
 	}
 	p.sanitizeFix()
@@ -114,7 +160,7 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
 	}
 
-	return observer
+	return observer, squashAnalysis
 }
 
 // Internal state required for performing mutations -- currently this matches
@@ -137,6 +183,9 @@ func (ctx *mutator) splice() bool {
 		return false
 	}
 	p0 := ctx.corpus[r.Intn(len(ctx.corpus))]
+	if profiler.AblationConfig.ReduceMutatorSplice {
+		p0 = ctx.corpus[0]
+	}
 	p0c := p0.Clone()
 	idx := r.Intn(len(p.Calls))
 	p.Calls = append(p.Calls[:idx], append(p0c.Calls, p.Calls[idx:]...)...)
@@ -200,7 +249,13 @@ func (ctx *mutator) insertCall() bool {
 	if len(p.Calls) >= ctx.ncalls {
 		return false
 	}
+
 	idx := r.biasedRand(len(p.Calls)+1, 5)
+	// choose index fully randomly if the reduction is activated
+	if profiler.AblationConfig.ReduceMutatorInsertCall {
+		idx = r.Intn(len(p.Calls) + 1)
+	}
+
 	var c *Call
 	if idx < len(p.Calls) {
 		c = p.Calls[idx]
@@ -233,6 +288,10 @@ func (ctx *mutator) mutateArg() bool {
 	}
 
 	idx := chooseCall(p, r)
+	if profiler.AblationConfig.ReduceMutatorMutateArg {
+		idx = chooseCallRandomly(p, r)
+	}
+
 	if idx < 0 {
 		return false
 	}
@@ -250,6 +309,9 @@ func (ctx *mutator) mutateArg() bool {
 		}
 		s := analyze(ctx.ct, ctx.corpus, p, c)
 		arg, argCtx := ma.chooseArg(r.Rand)
+		if profiler.AblationConfig.ReduceMutatorMutateArg {
+			arg, argCtx = ma.chooseArgRandomly(r.Rand)
+		}
 		calls, ok1 := p.Target.mutateArg(r, s, arg, argCtx, &updateSizes)
 		if !ok1 {
 			ok = false
@@ -272,6 +334,11 @@ func (ctx *mutator) mutateArg() bool {
 		}
 	}
 	return true
+}
+
+// Select a call randomly
+func chooseCallRandomly(p *Prog, r *randGen) int {
+	return r.Intn(len(p.Calls))
 }
 
 // Select a call based on the complexity of the arguments.
@@ -619,6 +686,12 @@ func (ma *mutationArgs) collectArg(arg Arg, ctx *ArgCtx) {
 	}
 	ma.prioSum += prio
 	ma.args = append(ma.args, mutationArg{arg, *ctx, ma.prioSum})
+}
+
+func (ma *mutationArgs) chooseArgRandomly(r *rand.Rand) (Arg, ArgCtx) {
+	idx := r.Intn(len(ma.args))
+	arg := ma.args[idx]
+	return arg.arg, arg.ctx
 }
 
 func (ma *mutationArgs) chooseArg(r *rand.Rand) (Arg, ArgCtx) {

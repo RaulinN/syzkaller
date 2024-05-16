@@ -29,8 +29,8 @@ RED := $(shell tput setaf 1)
 GREEN := $(shell tput setaf 2)
 RESET := $(shell tput sgr0)
 ifndef SYZ_ENV
-$(warning $(RED)run command via tools/syz-env for best compatibility, see:$(RESET))
-$(warning $(RED)https://github.com/google/syzkaller/blob/master/docs/contributing.md#using-syz-env$(RESET))
+#$(warning $(RED)run command via tools/syz-env for best compatibility, see:$(RESET))
+#$(warning $(RED)https://github.com/google/syzkaller/blob/master/docs/contributing.md#using-syz-env$(RESET))
 endif
 
 ENV := $(subst \n,$(newline),$(shell CI=$(CI)\

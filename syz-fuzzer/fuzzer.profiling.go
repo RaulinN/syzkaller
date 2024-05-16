@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/google/syzkaller/profiler"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -294,6 +295,23 @@ func main() {
 	for i := 0; i < *flagProcs*2; i++ {
 		go fuzzerTool.sendInputsWorker(fuzzerObj.Config.NewInputs)
 	}
+
+	// load ablation config
+	loadAblationConfig := func() {
+		// FIXME NICOLAS temporarily disabling ablation config. Tried literally everything on the docker to open the specific file => wouldnt work
+		/*
+			err := profiler.SetupAblationConfig("ablation_configuration.json", &profiler.AblationConfig)
+			if err != nil {
+				log.SyzFatalf("failed to read ablation config file: %v", err)
+			}
+		*/
+	}
+	profiler.AblationConfig.Once.Do(loadAblationConfig)
+	configJson, err := fuzzer.ToJson(profiler.AblationConfig)
+	if err != nil {
+		log.Logf(0, "failed to display ablation configuration file: %v", err)
+	}
+	fuzzerObj.Logf(0, "read ablation configuration: %v", configJson)
 
 	fuzzerTool.fuzzer.StartProfilingLogger()
 	fuzzerTool.pollLoop()

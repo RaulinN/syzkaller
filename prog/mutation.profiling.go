@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"time"
 
 	"github.com/google/syzkaller/pkg/image"
 )
@@ -73,8 +74,19 @@ const (
 	MutatorIndexRemoveCall
 )
 
-func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) map[MutatorIndex]int {
+type MutatorAnalysis struct {
+	NFails      uint64
+	NSuccess    uint64
+	TimeFails   time.Duration
+	TimeSuccess time.Duration
+}
+
+func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) (map[MutatorIndex]int, MutatorAnalysis) {
 	observer := map[MutatorIndex]int{} // count utilization of mutators
+	squashAnalysis := MutatorAnalysis{
+		NFails: 0, NSuccess: 0,
+		TimeFails: time.Duration(0), TimeSuccess: time.Duration(0),
+	}
 
 	r := newRand(p.Target, rs)
 	if ncalls < len(p.Calls) {
@@ -98,7 +110,20 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 				// Not all calls have anything squashable,
 				// so this has lower priority in reality.
 				observer[MutatorIndexSquashAny]++
+
+				start := time.Now()
 				ok = ctx.squashAny()
+				delta := time.Since(start)
+
+				if ok {
+					// the mutator succeeded
+					squashAnalysis.NSuccess += 1
+					squashAnalysis.TimeSuccess += delta
+				} else {
+					// the mutator did nothing
+					squashAnalysis.NFails += 1
+					squashAnalysis.TimeFails += delta
+				}
 			}
 		case r.nOutOf(1, 100):
 			if !profiler.AblationConfig.DisableMutatorSplice {
@@ -135,7 +160,7 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
 	}
 
-	return observer
+	return observer, squashAnalysis
 }
 
 // Internal state required for performing mutations -- currently this matches

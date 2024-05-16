@@ -40,6 +40,12 @@ func NewMonitoredCorpus(ctx context.Context, updates chan<- NewItemEvent) *Corpu
 	}
 }
 
+func (c *Corpus) Len() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return uint64(len(c.progs))
+}
+
 // It may happen that a single program is relevant because of several
 // sysalls. In that case, there will be several ItemUpdate entities.
 type ItemUpdate struct {
@@ -111,7 +117,7 @@ type NewItemEvent struct {
 }
 
 // returns by how much the coverage was increased
-func (corpus *Corpus) Save(inp NewInput) uint64 {
+func (corpus *Corpus) Save(inp NewInput) ([]uint32, uint64) {
 	progData := inp.Prog.Serialize()
 	sig := hash.String(progData)
 
@@ -172,7 +178,7 @@ func (corpus *Corpus) Save(inp NewInput) uint64 {
 		}
 	}
 
-	return covIncrease
+	return newCover, covIncrease
 }
 
 func (corpus *Corpus) DiffSignal(s signal.Signal) signal.Signal {

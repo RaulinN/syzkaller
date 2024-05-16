@@ -28,3 +28,17 @@ func (fuzzer *Fuzzer) GrabStats() map[string]uint64 {
 	fuzzer.stats = map[string]uint64{}
 	return ret
 }
+
+func (fuzzer *Fuzzer) GrabAllStats() map[string]uint64 {
+	r := fuzzer.GrabStats()
+
+	fuzzer.mu.Lock()
+	defer fuzzer.mu.Unlock()
+
+	r["running jobs"] = uint64(fuzzer.runningJobs.Load())
+	r["queued candidates"] = uint64(fuzzer.queuedCandidates.Load())
+	r["exec queue size (prio queue of req)"] = uint64(fuzzer.nextExec.Len())
+	r["queued requests (running req)"] = uint64(len(fuzzer.runningExecs))
+
+	return r
+}

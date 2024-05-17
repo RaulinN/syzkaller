@@ -272,7 +272,9 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 			fuzzer.Logf(0, "ERROR encoding PC map '%v' to JSON", r)
 		}
 
-		fuzzer.Logf(0, "%v;new PC from merge diff registered;%s", now, rJson)
+		if FLAG_LOG_NEW_PC {
+			fuzzer.Logf(0, "%v;new PC from merge diff registered;%s", now, rJson)
+		}
 	}
 
 	// increase aggregated stats

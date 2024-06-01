@@ -51,14 +51,7 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 		case r.nOutOf(1, 100):
 			ok = ctx.splice()
 		case r.nOutOf(1, 100):
-			ok = false
-			for stopNow, it := false, 0; !ok && !stopNow && it < MaxShuffleIt; it += 1 {
-				stopNow = !ctx.shuffle()
-				if !stopNow && ctx.p.validate() == nil {
-					ok = true
-				}
-			}
-
+			ok = ctx.shuffle()
 		case r.nOutOf(20, 31):
 			ok = ctx.insertCall()
 		case r.nOutOf(10, 11):
@@ -119,17 +112,8 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 			}
 		case r.nOutOf(1, 100):
 			if !profiler.AblationConfig.DisableMutatorShuffle {
-				ok = false
-				for stopNow, it := false, 0; !ok && !stopNow && it < MaxShuffleIt; it += 1 {
-					stopNow = !ctx.shuffle()
-					if !stopNow && ctx.p.validate() == nil {
-						ok = true
-					}
-				}
-
-				if ok {
-					observer[MutatorIndexShuffle]++
-				}
+				ok = ctx.shuffle()
+				observer[MutatorIndexShuffle]++
 			}
 		case r.nOutOf(20, 31):
 			if !profiler.AblationConfig.DisableMutatorInsertCall {
@@ -175,6 +159,8 @@ type mutator struct {
 	corpus   []*Prog      // The entire corpus, including original program p.
 }
 
+// try to shuffle the program around a maximum of MaxShuffleIt times. If the shuffle
+// does not produce a valid program, the original program is unchanged
 func (ctx *mutator) shuffle() bool {
 	p, r := ctx.p, ctx.r
 	n := len(p.Calls)
@@ -182,23 +168,36 @@ func (ctx *mutator) shuffle() bool {
 		return false
 	}
 
-	p0c := p.Clone()
+	for it := 0; it < MaxShuffleIt; it += 1 {
+		p0c := p.Clone()
 
-	slice := make([]int, n)
-	for i := 0; i < n; i++ {
-		slice[i] = i
-	}
-	// shuffle the slice
-	for i := range slice {
-		j := r.Intn(i + 1)
-		slice[i], slice[j] = slice[j], slice[i]
+		slice := make([]int, n)
+		for i := 0; i < n; i++ {
+			slice[i] = i
+		}
+
+		// shuffle the slice
+		for i := range slice {
+			j := r.Intn(i + 1)
+			slice[i], slice[j] = slice[j], slice[i]
+		}
+
+		// create a resulting shuffled program in the clone
+		for i, v := range slice {
+			p0c.Calls[i] = p.Calls[v]
+		}
+
+		if p0c.validate() == nil {
+			// copy the shuffled program in the original program. We use a copy instead of
+			// modifying the original one directly if the program created is invalid
+			for i, v := range p0c.Calls {
+				p.Calls[i] = v
+			}
+			return true
+		}
 	}
 
-	for i, v := range slice {
-		p.Calls[i] = p0c.Calls[v]
-	}
-
-	return true
+	return false
 }
 
 // This function selects a random other program p0 out of the corpus, and

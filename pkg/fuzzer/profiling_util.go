@@ -3,6 +3,7 @@ package fuzzer
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 type ProfilingModeName string
@@ -61,6 +62,18 @@ func allMutators() []ProfilingMutatorName {
 		ProfilingStatMutatorMutateArg,
 		ProfilingStatMutatorRemoveCall,
 	}
+}
+
+func (fuzzer *Fuzzer) AddTimeSpent(identifier string, duration time.Duration) {
+	fuzzer.mu.Lock()
+	defer fuzzer.mu.Unlock()
+
+	fuzzer.stats[identifier] += uint64(duration.Nanoseconds())
+}
+
+func (fuzzer *Fuzzer) AddModeTimeSpent(mode ProfilingModeName, duration time.Duration) {
+	id := fmt.Sprintf("%v > time spent (!= executing) (ns)", mode)
+	fuzzer.AddTimeSpent(id, duration)
 }
 
 // https://siongui.github.io/2016/01/30/go-pretty-print-variable/

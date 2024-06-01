@@ -298,10 +298,18 @@ func (fuzzer *Fuzzer) pushExec(req *Request, prio priority) {
 func (fuzzer *Fuzzer) exec(job job, req *Request) *Result {
 	req.resultC = make(chan *Result, 1)
 	fuzzer.pushExec(req, job.priority())
+	t := time.Now() // compute duration spent in queue
 	select {
 	case <-fuzzer.ctx.Done():
 		return &Result{Stop: true}
 	case res := <-req.resultC:
+		dt := time.Since(t)
+
+		msg := fmt.Sprintf("[prof] priority queue > time spent for stat='%v', requesterStat='%v'", req.stat, req.requesterStat)
+		fuzzer.mu.Lock()
+		fuzzer.stats[msg] += uint64(dt.Nanoseconds())
+		fuzzer.mu.Unlock()
+
 		close(req.resultC)
 		return res
 	}

@@ -410,6 +410,7 @@ type smashJob struct {
 type SmashAnalysis struct {
 	NFaultInjection        uint64
 	NHintsJobStart         uint64
+	DurationMutations      time.Duration
 	DurationFullSmash      time.Duration
 	DurationFaultInjection time.Duration
 }
@@ -424,6 +425,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	smashAnalysis := SmashAnalysis{
 		NFaultInjection:        0,
 		NHintsJobStart:         0,
+		DurationMutations:      time.Duration(0),
 		DurationFullSmash:      time.Duration(0),
 		DurationFaultInjection: time.Duration(0),
 	}
@@ -460,6 +462,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 
 			deltaInside := time.Since(startInside)
 			fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
+			smashAnalysis.DurationMutations += deltaInside
 			profileMutateObserver(fuzzer, obs)
 			profileSquashAnalysis(fuzzer, sqAn)
 		}
@@ -504,6 +507,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	fuzzer.stats["[prof] analysis : smash > #fault Injections"] += smashAnalysis.NFaultInjection
 	fuzzer.stats["[prof] analysis : smash > time spent (fault injection)"] += uint64(smashAnalysis.DurationFaultInjection.Nanoseconds())
 	fuzzer.stats["[prof] analysis : smash > time spent (full smash)"] += uint64(smashAnalysis.DurationFullSmash.Nanoseconds())
+	fuzzer.stats["[prof] analysis : smash > time spent (mutations)"] += uint64(smashAnalysis.DurationMutations.Nanoseconds())
 }
 
 func randomCollide(origP *prog.Prog, rnd *rand.Rand) *prog.Prog {

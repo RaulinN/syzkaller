@@ -416,12 +416,6 @@ type SmashAnalysis struct {
 }
 
 func (job *smashJob) run(fuzzer *Fuzzer) {
-	// smashJob simply starts a hintsJob and performs 100 mutations. We can simply omit
-	// these operations and return instantly
-	if profiler.AblationConfig.DisableModeSmash {
-		return
-	}
-
 	smashAnalysis := SmashAnalysis{
 		NFaultInjection:        0,
 		NHintsJobStart:         0,
@@ -441,6 +435,13 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		})
 	}
 
+	// smashJob simply starts a hintsJob and performs 100 mutations. We can simply omit
+	// these operations and return instantly. If the smash mode is disabled, with STILL
+	// want to run the hints jobs
+	if profiler.AblationConfig.DisableModeSmash {
+		return
+	}
+
 	fuzzer.profilingStats.IncModeCounter(ProfilingStatModeSmash)
 	start := time.Now()
 
@@ -449,28 +450,26 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	for i := 0; i < iters; i++ {
 		p := job.p.Clone()
 
-		// if the mutation mode is disabled, simply use the original program
-		if !profiler.AblationConfig.DisableModeMutate { // FIXME NICOLAS CHANGE IN BRANCH ABLATION FIX
-			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
-			startInside := time.Now()
+		// if the mutation mode is disabled, we still want to be able to smash!
+		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
+		startInside := time.Now()
 
-			obs, sqAn := p.MutateWithObserver(rnd, prog.RecommendedCalls,
-				fuzzer.ChoiceTable(),
-				fuzzer.Config.NoMutateCalls,
-				fuzzer.Config.Corpus.Programs(),
-			)
+		obs, sqAn := p.MutateWithObserver(rnd, prog.RecommendedCalls,
+			fuzzer.ChoiceTable(),
+			fuzzer.Config.NoMutateCalls,
+			fuzzer.Config.Corpus.Programs(),
+		)
 
-			deltaInside := time.Since(startInside)
-			fuzzer.AddModeTimeSpent(ProfilingStatModeMutateFromSmash, deltaInside)
-			smashAnalysis.DurationMutations += deltaInside
-			profileMutateObserver(fuzzer, obs)
-			profileSquashAnalysis(fuzzer, sqAn)
-		}
+		deltaInside := time.Since(startInside)
+		fuzzer.AddModeTimeSpent(ProfilingStatModeMutateFromSmash, deltaInside)
+		smashAnalysis.DurationMutations += deltaInside
+		profileMutateObserver(fuzzer, obs)
+		profileSquashAnalysis(fuzzer, sqAn)
 
 		result := fuzzer.exec(job, &Request{
 			Prog:          p,
 			NeedSignal:    true,
-			stat:          statSmash, // FIXME NICOLAS RECURSION
+			stat:          statSmash,
 			requesterStat: statFuzzFromSmash,
 		})
 		if result.Stop {
@@ -541,7 +540,7 @@ func (job *smashJob) faultInjection(fuzzer *Fuzzer) uint64 {
 		result := fuzzer.exec(job, &Request{
 			Prog:          job.p,
 			stat:          statSmash,
-			requesterStat: statSmash, // FIXME NICOLAS maybe distinguish this case?
+			requesterStat: statSmash,
 		})
 		count += 1
 		if result.Stop {
@@ -596,7 +595,7 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 			result := fuzzer.exec(job, &Request{
 				Prog:          p,
 				NeedSignal:    true,
-				stat:          statHint, // FIXME NICOLAS RECURSION
+				stat:          statHint,
 				requesterStat: statHint,
 			})
 			return !result.Stop

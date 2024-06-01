@@ -201,7 +201,7 @@ func triageJobPrio(flags ProgTypes) jobPriority {
 
 func (job *triageJob) run(fuzzer *Fuzzer) {
 	if job.requesterStat == "" {
-		fuzzer.Logf(0, "ERROR! started a triage job that does not have any requestStat!") // FIXME NICOLAS REMOVE
+		fuzzer.Logf(0, "ERROR! started a triage job that does not have any requestStat!")
 	}
 	logCallName := "extra"
 	if job.call != -1 {
@@ -278,7 +278,6 @@ func (job *triageJob) run(fuzzer *Fuzzer) {
 	// increase aggregated stats
 	fuzzer.stats[ProfilingAllStatsContribution(covChanged)]++
 
-	fuzzer.stats[ProfilingStatBasicBlocksCoverage("TEST ALL STATS")] += covIncrease // FIXME NICOLAS REMOVE
 	fuzzer.mu.Unlock()
 
 	if fuzzer.Config.NewInputs != nil {

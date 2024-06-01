@@ -19,6 +19,8 @@ import (
 // Maximum length of generated binary blobs inserted into the program.
 const maxBlobLen = uint64(100 << 10)
 
+const MaxShuffleIt = 16
+
 // Mutate program p.
 //
 // p:           The program to mutate.
@@ -49,7 +51,14 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 		case r.nOutOf(1, 100):
 			ok = ctx.splice()
 		case r.nOutOf(1, 100):
-			ok = ctx.shuffle()
+			ok = false
+			for stopNow, it := false, 0; !ok && !stopNow && it < MaxShuffleIt; it += 1 {
+				stopNow = !ctx.shuffle()
+				if !stopNow && ctx.p.validate() == nil {
+					ok = true
+				}
+			}
+
 		case r.nOutOf(20, 31):
 			ok = ctx.insertCall()
 		case r.nOutOf(10, 11):
@@ -110,8 +119,17 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 			}
 		case r.nOutOf(1, 100):
 			if !profiler.AblationConfig.DisableMutatorShuffle {
-				observer[MutatorIndexShuffle]++
-				ok = ctx.shuffle()
+				ok = false
+				for stopNow, it := false, 0; !ok && !stopNow && it < MaxShuffleIt; it += 1 {
+					stopNow = !ctx.shuffle()
+					if !stopNow && ctx.p.validate() == nil {
+						ok = true
+					}
+				}
+
+				if ok {
+					observer[MutatorIndexShuffle]++
+				}
 			}
 		case r.nOutOf(20, 31):
 			if !profiler.AblationConfig.DisableMutatorInsertCall {

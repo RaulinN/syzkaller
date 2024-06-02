@@ -84,7 +84,7 @@ func genProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		fuzzer.ChoiceTable())
 
 	delta := time.Since(start)
-	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeGenerate, delta)
+	fuzzer.AddModeTimeSpent(ProfilingStatModeGenerate, delta)
 
 	return &Request{
 		Prog:          p,
@@ -144,7 +144,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		)
 
 		delta := time.Since(start)
-		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
+		fuzzer.AddModeTimeSpent(ProfilingStatModeMutate, delta)
 		profileMutateObserver(fuzzer, obs)
 		profileSquashAnalysis(fuzzer, sqAn)
 	}
@@ -452,7 +452,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		p := job.p.Clone()
 
 		// if the mutation mode is disabled, simply use the original program
-		if !profiler.AblationConfig.DisableModeMutate {
+		if !profiler.AblationConfig.DisableModeMutate { // FIXME NICOLAS CHANGE IN BRANCH ABLATION FIX
 			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
 			startInside := time.Now()
 
@@ -463,7 +463,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 			)
 
 			deltaInside := time.Since(startInside)
-			fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
+			fuzzer.AddModeTimeSpent(ProfilingStatModeMutateFromSmash, deltaInside)
 			smashAnalysis.DurationMutations += deltaInside
 			profileMutateObserver(fuzzer, obs)
 			profileSquashAnalysis(fuzzer, sqAn)
@@ -499,7 +499,6 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 	}
 
 	delta := time.Since(start)
-	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeSmash, delta)
 	smashAnalysis.DurationFullSmash += delta
 
 	fuzzer.mu.Lock()
@@ -607,7 +606,7 @@ func (job *hintsJob) run(fuzzer *Fuzzer) {
 	)
 
 	delta := time.Since(start)
-	fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateHints, delta)
+	fuzzer.AddModeTimeSpent(ProfilingStatModeMutateHints, delta)
 
 	if job.fromSmash {
 		fuzzer.mu.Lock()

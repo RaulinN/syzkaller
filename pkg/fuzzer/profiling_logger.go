@@ -9,7 +9,6 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 
 		prevCounts := map[string]uint64{}
 
-		// FIXME NICOLAS I believe this will actually be reset every hour (on executor creation) => make it persistent
 		for {
 			time.Sleep(60 * time.Second)
 			now := time.Now().Unix()
@@ -41,7 +40,6 @@ func (fuzzer *Fuzzer) StartProfilingLogger() {
 			}
 			fuzzer.Logf(0, "%v;logging all stats:%v", now, statsJson)
 
-			// TODO display durations on dashboard?
 			fuzzer.mu.Lock()
 			for _, mode := range modes {
 				modeName := string(mode)

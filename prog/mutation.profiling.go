@@ -78,7 +78,7 @@ const (
 	MutatorIndexShuffle
 )
 
-func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) map[MutatorIndex]int {
+func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) (map[MutatorIndex]int, int) {
 	observer := map[MutatorIndex]int{} // count utilization of mutators
 
 	r := newRand(p.Target, rs)
@@ -93,6 +93,8 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 		noMutate: noMutate,
 		corpus:   corpus,
 	}
+
+	failsShuffle := 0 // number of times the shuffle mutator failed in the main loop
 
 	// if all mutators have been disabled, then we will be stuck forever in the for-loop below
 	// we thus need to execute the loop only if at least one of the mutators is enabled
@@ -112,8 +114,10 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 			}
 		case r.nOutOf(1, 100):
 			if !profiler.AblationConfig.DisableMutatorShuffle {
-				ok = ctx.shuffle()
+				n := 0
+				ok, n = ctx.shuffle()
 				observer[MutatorIndexShuffle]++
+				failsShuffle += n
 			}
 		case r.nOutOf(20, 31):
 			if !profiler.AblationConfig.DisableMutatorInsertCall {
@@ -145,7 +149,7 @@ func (p *Prog) MutateWithObserver(rs rand.Source, ncalls int, ct *ChoiceTable, n
 		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
 	}
 
-	return observer
+	return observer, failsShuffle
 }
 
 // Internal state required for performing mutations -- currently this matches
@@ -160,12 +164,13 @@ type mutator struct {
 }
 
 // try to shuffle the program around a maximum of MaxShuffleIt times. If the shuffle
-// does not produce a valid program, the original program is unchanged
-func (ctx *mutator) shuffle() bool {
+// does not produce a valid program, the original program is unchanged. The second
+// argument returned corresponds to the amount of times the mutator failed in the loop
+func (ctx *mutator) shuffle() (bool, int) {
 	p, r := ctx.p, ctx.r
 	n := len(p.Calls)
 	if n == 0 || n >= ctx.ncalls {
-		return false
+		return false, 0
 	}
 
 	for it := 0; it < MaxShuffleIt; it += 1 {
@@ -193,11 +198,11 @@ func (ctx *mutator) shuffle() bool {
 			for i, v := range p0c.Calls {
 				p.Calls[i] = v
 			}
-			return true
+			return true, it
 		}
 	}
 
-	return false
+	return false, MaxShuffleIt
 }
 
 // This function selects a random other program p0 out of the corpus, and

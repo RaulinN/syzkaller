@@ -128,7 +128,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutate)
 		start := time.Now()
 
-		obs := newP.MutateWithObserver(rnd,
+		obs, failsShuffle := newP.MutateWithObserver(rnd,
 			prog.RecommendedCalls,
 			fuzzer.ChoiceTable(),
 			fuzzer.Config.NoMutateCalls,
@@ -138,6 +138,9 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		delta := time.Since(start)
 		fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutate, delta)
 		profileMutateObserver(fuzzer, obs)
+		fuzzer.mu.Lock()
+		fuzzer.stats["[prof] shuffle : fails in main shuffle loop"] += uint64(failsShuffle)
+		fuzzer.mu.Unlock()
 	}
 
 	return &Request{
@@ -427,7 +430,7 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 			fuzzer.profilingStats.IncModeCounter(ProfilingStatModeMutateFromSmash)
 			startInside := time.Now()
 
-			obs := p.MutateWithObserver(rnd, prog.RecommendedCalls,
+			obs, failsShuffle := p.MutateWithObserver(rnd, prog.RecommendedCalls,
 				fuzzer.ChoiceTable(),
 				fuzzer.Config.NoMutateCalls,
 				fuzzer.Config.Corpus.Programs(),
@@ -436,6 +439,9 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 			deltaInside := time.Since(startInside)
 			fuzzer.profilingStats.AddModeDuration(ProfilingStatModeMutateFromSmash, deltaInside)
 			profileMutateObserver(fuzzer, obs)
+			fuzzer.mu.Lock()
+			fuzzer.stats["[prof] shuffle : fails in main shuffle loop"] += uint64(failsShuffle)
+			fuzzer.mu.Unlock()
 		}
 
 		result := fuzzer.exec(job, &Request{

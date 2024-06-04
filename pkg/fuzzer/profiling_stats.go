@@ -55,6 +55,7 @@ func (ps *ProfilingStats) allCounts() map[string]uint64 {
 		string(ProfilingStatMutatorInsertCall): ps.countMutators[ProfilingStatMutatorInsertCall].get(),
 		string(ProfilingStatMutatorMutateArg):  ps.countMutators[ProfilingStatMutatorMutateArg].get(),
 		string(ProfilingStatMutatorRemoveCall): ps.countMutators[ProfilingStatMutatorRemoveCall].get(),
+		string(ProfilingStatMutatorShuffle):    ps.countMutators[ProfilingStatMutatorShuffle].get(),
 	}
 }
 

@@ -1,4 +1,4 @@
-//go:build !disable_dependency_analysis
+//go:build disable_dependency_analysis
 
 // Copyright 2015 syzkaller project authors. All rights reserved.
 // Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
@@ -31,15 +31,7 @@ type state struct {
 
 // analyze analyzes the program p up to but not including call c.
 func analyze(ct *ChoiceTable, corpus []*Prog, p *Prog, c *Call) *state {
-	s := newState(p.Target, ct, corpus)
-	resources := true
-	for _, c1 := range p.Calls {
-		if c1 == c {
-			resources = false
-		}
-		s.analyzeImpl(c1, resources)
-	}
-	return s
+	return newState(p.Target, ct, corpus)
 }
 
 func newState(target *Target, ct *ChoiceTable, corpus []*Prog) *state {
